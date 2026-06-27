@@ -1,6 +1,7 @@
 "use client";
 
 import { firebaseAuth } from "@/lib/firebase/client";
+import { ensureUserProfile } from "@/lib/data/userRepository";
 import { User, onAuthStateChanged, signOut } from "firebase/auth";
 import {
   ReactNode,
@@ -28,9 +29,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
-      setUser(nextUser);
-      setLoading(false);
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (nextUser) => {
+      try {
+        if (nextUser) {
+          await ensureUserProfile(nextUser);
+        }
+
+        setUser(nextUser);
+      } catch (error) {
+        console.error("Failed to load or create user profile:", error);
+        setUser(nextUser);
+      } finally {
+        setLoading(false);
+      }
     });
 
     return () => unsubscribe();

@@ -1,23 +1,29 @@
+import Link from "next/link";
+
 const statusItems = [
   {
     label: "Project status",
     value: "Web setup started",
-    detail: "Next.js, TypeScript, Tailwind, and Firebase packages are installed.",
+    detail:
+      "Next.js, TypeScript, Tailwind, Firebase Auth, and Firestore profiles are working.",
   },
   {
     label: "Current build focus",
-    value: "App shell",
-    detail: "Dark dashboard layout, navigation, and placeholder pages.",
+    value: "Auth + user data",
+    detail:
+      "Users can sign in and Firestore creates a private user profile document.",
   },
   {
     label: "Trading mode",
     value: "Advisory only",
-    detail: "No auto-trading. The app will review positions and provide recommendations.",
+    detail:
+      "No auto-trading. The app will review positions and provide recommendations.",
   },
 ];
 
 const roadmapItems = [
   "Firebase sign-in and protected routes",
+  "Firestore user profile storage",
   "Encrypted Kalshi and OpenAI credential storage",
   "Open-position import from Kalshi",
   "Deterministic position review",
@@ -43,6 +49,29 @@ export default function Home() {
               credentials, position tracking, and clear hold / trim / sell /
               roll recommendations.
             </p>
+
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a]"
+              >
+                Sign in
+              </Link>
+
+              <Link
+                href="/register"
+                className="inline-flex items-center justify-center rounded-xl border border-[#1f2a24] px-5 py-3 text-sm font-semibold text-[#f4f7f5] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+              >
+                Create account
+              </Link>
+
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center rounded-xl border border-[#1f2a24] px-5 py-3 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+              >
+                Dashboard
+              </Link>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-5 shadow-2xl shadow-black/30">
@@ -87,37 +116,43 @@ export default function Home() {
                 </h2>
               </div>
               <span className="rounded-full border border-[#22c55e]/40 bg-[#0b2a18] px-3 py-1 text-sm font-semibold text-[#22c55e]">
-                Planned
+                In progress
               </span>
             </div>
 
             <div className="mt-6 rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
-              <p className="text-sm text-[#a8b3ad]">
-                Target workflow
-              </p>
+              <p className="text-sm text-[#a8b3ad]">Target workflow</p>
               <div className="mt-4 grid gap-3">
                 <div className="rounded-xl border border-[#1f2a24] p-4">
-                  <p className="font-semibold text-white">
-                    1. Sign in
-                  </p>
+                  <p className="font-semibold text-white">1. Sign in</p>
                   <p className="mt-1 text-sm text-[#a8b3ad]">
                     Firebase Authentication with email and password.
                   </p>
                 </div>
+
                 <div className="rounded-xl border border-[#1f2a24] p-4">
-                  <p className="font-semibold text-white">
-                    2. Add credentials
-                  </p>
+                  <p className="font-semibold text-white">2. Load user profile</p>
                   <p className="mt-1 text-sm text-[#a8b3ad]">
-                    Kalshi and OpenAI keys saved per user after server-side encryption.
+                    Firestore creates a private profile document under each
+                    signed-in user&apos;s UID.
                   </p>
                 </div>
+
+                <div className="rounded-xl border border-[#1f2a24] p-4">
+                  <p className="font-semibold text-white">3. Add credentials</p>
+                  <p className="mt-1 text-sm text-[#a8b3ad]">
+                    Kalshi and OpenAI keys will be saved per user after
+                    server-side encryption.
+                  </p>
+                </div>
+
                 <div className="rounded-xl border border-[#1f2a24] p-4">
                   <p className="font-semibold text-white">
-                    3. Review open positions
+                    4. Review open positions
                   </p>
                   <p className="mt-1 text-sm text-[#a8b3ad]">
-                    Pull positions, compare against updated weather, and show action guidance.
+                    Pull positions, compare against updated weather, and show
+                    action guidance.
                   </p>
                 </div>
               </div>
