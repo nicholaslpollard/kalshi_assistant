@@ -45,12 +45,28 @@ export default function DashboardPage() {
             <p className="mt-2 text-[#a8b3ad]">Signed in as {user.email}</p>
           </div>
 
-          <button
-            onClick={() => logout()}
-            className="rounded-xl border border-[#1f2a24] px-4 py-3 text-sm font-semibold text-[#f4f7f5] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-          >
-            Sign out
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/"
+              className="rounded-xl border border-[#1f2a24] px-4 py-3 text-center text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+            >
+              Home
+            </Link>
+
+            <Link
+              href="/settings/credentials"
+              className="rounded-xl border border-[#1f2a24] px-4 py-3 text-center text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+            >
+              Credentials
+            </Link>
+
+            <button
+              onClick={() => logout()}
+              className="rounded-xl border border-[#1f2a24] px-4 py-3 text-sm font-semibold text-[#f4f7f5] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+            >
+              Sign out
+            </button>
+          </div>
         </header>
 
         <section className="grid gap-4 py-8 md:grid-cols-3">
@@ -65,13 +81,20 @@ export default function DashboardPage() {
           </div>
 
           <div className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-5">
-            <p className="text-sm text-[#6f7b74]">Next step</p>
+            <p className="text-sm text-[#6f7b74]">Credential status</p>
             <h2 className="mt-2 text-xl font-semibold text-white">
-              Credentials
+              Encrypted storage
             </h2>
             <p className="mt-3 text-sm text-[#a8b3ad]">
-              Add encrypted Kalshi and OpenAI key storage.
+              Review whether Kalshi and OpenAI credentials are saved without
+              exposing the actual values.
             </p>
+            <Link
+              href="/settings/credentials"
+              className="mt-4 inline-flex rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+            >
+              Open credentials
+            </Link>
           </div>
 
           <div className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-5">
@@ -81,6 +104,32 @@ export default function DashboardPage() {
             </h2>
             <p className="mt-3 text-sm text-[#a8b3ad]">
               No auto-trading. Position review and decision support only.
+            </p>
+          </div>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#22c55e]">
+              Next milestone
+            </p>
+            <h2 className="mt-2 text-2xl font-bold">Kalshi connection test</h2>
+            <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+              The next build step will decrypt saved Kalshi credentials on the
+              server only, sign a basic Kalshi API request, and report whether
+              the connection succeeds.
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#22c55e]">
+              Safety model
+            </p>
+            <h2 className="mt-2 text-2xl font-bold">Secrets stay server-side</h2>
+            <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+              The browser can check whether credentials exist, but it should
+              never receive saved keys, decrypted secrets, private keys, or
+              encrypted ciphertext.
             </p>
           </div>
         </section>
