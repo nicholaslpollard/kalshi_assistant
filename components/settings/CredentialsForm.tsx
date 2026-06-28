@@ -43,8 +43,12 @@ export function CredentialsForm() {
 
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [kalshiTestStatus, setKalshiTestStatus] = useState("");
+  const [kalshiTestError, setKalshiTestError] = useState("");
+
   const [saving, setSaving] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [testingKalshi, setTestingKalshi] = useState(false);
 
   async function getCurrentUserToken() {
     const user = firebaseAuth.currentUser;
@@ -91,10 +95,57 @@ export function CredentialsForm() {
     }
   }
 
+  async function testKalshiConnection() {
+    setKalshiTestStatus("");
+    setKalshiTestError("");
+    setTestingKalshi(true);
+
+    try {
+      const idToken = await getCurrentUserToken();
+
+      const response = await fetch("/api/credentials/kalshi/test", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      const body = await response.json();
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Kalshi connection test failed.");
+      }
+
+      if (!body.connected) {
+        throw new Error(
+          body?.error ??
+            "Kalshi connection test failed. Check your saved credentials."
+        );
+      }
+
+      setKalshiTestStatus(
+        body?.message ?? "Kalshi connection test succeeded."
+      );
+    } catch (err) {
+      console.error(err);
+
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to test Kalshi connection.";
+
+      setKalshiTestError(message);
+    } finally {
+      setTestingKalshi(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("");
     setError("");
+    setKalshiTestStatus("");
+    setKalshiTestError("");
     setSaving(true);
 
     try {
@@ -142,6 +193,10 @@ export function CredentialsForm() {
   useEffect(() => {
     void loadCredentialStatus();
   }, []);
+
+  const hasCompleteKalshiCredentials =
+    credentialStatus.hasKalshiApiKeyId &&
+    credentialStatus.hasKalshiPrivateKey;
 
   return (
     <div className="space-y-6">
@@ -214,6 +269,47 @@ export function CredentialsForm() {
             ? new Date(credentialStatus.updatedAt).toLocaleString()
             : "Not saved yet"}
         </p>
+      </section>
+
+      <section className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
+        <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#22c55e]">
+          Connection Test
+        </p>
+        <h2 className="mt-2 text-2xl font-bold text-white">
+          Test Kalshi credentials
+        </h2>
+        <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+          This decrypts the saved Kalshi credentials on the server only, signs a
+          read-only balance request, and returns only the connection result.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => testKalshiConnection()}
+          disabled={testingKalshi || !hasCompleteKalshiCredentials}
+          className="mt-6 rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {testingKalshi ? "Testing..." : "Test Kalshi connection"}
+        </button>
+
+        {!hasCompleteKalshiCredentials ? (
+          <p className="mt-4 text-sm text-[#6f7b74]">
+            Save both the Kalshi API Key ID and Kalshi Private Key before
+            testing.
+          </p>
+        ) : null}
+
+        {kalshiTestStatus ? (
+          <p className="mt-5 rounded-xl border border-[#22c55e]/40 bg-[#0b2a18] px-4 py-3 text-sm text-[#bbf7d0]">
+            {kalshiTestStatus}
+          </p>
+        ) : null}
+
+        {kalshiTestError ? (
+          <p className="mt-5 rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/10 px-4 py-3 text-sm text-[#fecaca]">
+            {kalshiTestError}
+          </p>
+        ) : null}
       </section>
 
       <form
