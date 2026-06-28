@@ -2,16 +2,16 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { AppShell } from "@/components/layout/AppShell";
-import { CredentialsForm } from "@/components/settings/CredentialsForm";
+import { PositionsClient } from "@/components/positions/PositionsClient";
 import Link from "next/link";
 
-export default function CredentialsPage() {
+export default function PositionsPage() {
   const { user, loading } = useAuth();
 
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#050807] text-white">
-        Loading credentials page...
+        Loading positions...
       </main>
     );
   }
@@ -22,7 +22,7 @@ export default function CredentialsPage() {
         <section className="max-w-md rounded-3xl border border-[#1f2a24] bg-[#101714] p-6 text-center">
           <h1 className="text-2xl font-bold">Sign-in required</h1>
           <p className="mt-3 text-[#a8b3ad]">
-            You need to sign in before saving credentials.
+            You need to sign in before viewing Kalshi positions.
           </p>
           <Link
             href="/login"
@@ -38,20 +38,8 @@ export default function CredentialsPage() {
   return (
     <AppShell>
       <main className="px-6 py-8">
-        <section className="mx-auto max-w-3xl">
-          <div className="mb-6">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#22c55e]">
-              Settings
-            </p>
-            <h1 className="mt-2 text-3xl font-bold">API Credentials</h1>
-            <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
-              Save, verify, and monitor encrypted Kalshi and OpenAI credentials.
-              The top navigation bar shows safe account status without exposing
-              any saved secrets.
-            </p>
-          </div>
-
-          <CredentialsForm />
+        <section className="mx-auto max-w-7xl">
+          <PositionsClient />
         </section>
       </main>
     </AppShell>
