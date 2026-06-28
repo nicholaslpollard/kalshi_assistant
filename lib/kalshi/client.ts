@@ -95,3 +95,31 @@ export async function getKalshiPositions(credentials: KalshiClientCredentials) {
     credentials
   );
 }
+
+export type KalshiLegacyOrderbookLevel = [number, number];
+export type KalshiFixedPointOrderbookLevel = [string, string];
+
+export type KalshiLegacyOrderbook = {
+  yes?: KalshiLegacyOrderbookLevel[];
+  no?: KalshiLegacyOrderbookLevel[];
+};
+
+export type KalshiFixedPointOrderbook = {
+  yes_dollars?: KalshiFixedPointOrderbookLevel[];
+  no_dollars?: KalshiFixedPointOrderbookLevel[];
+};
+
+export type KalshiOrderbookResponse = {
+  orderbook?: KalshiLegacyOrderbook;
+  orderbook_fp?: KalshiFixedPointOrderbook;
+};
+
+export async function getKalshiMarketOrderbook(
+  ticker: string,
+  credentials: KalshiClientCredentials
+) {
+  return kalshiGet<KalshiOrderbookResponse>(
+    `/trade-api/v2/markets/${encodeURIComponent(ticker)}/orderbook`,
+    credentials
+  );
+}

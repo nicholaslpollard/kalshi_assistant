@@ -1,6 +1,10 @@
 import { getServerUserFromRequest } from "@/lib/auth/getServerUser";
 import { getDecryptedKalshiCredentials } from "@/lib/data/credentialRepository";
-import { getKalshiPositions } from "@/lib/kalshi/client";
+import {
+  getKalshiMarketOrderbook,
+  getKalshiPositions,
+  type KalshiOrderbookResponse,
+} from "@/lib/kalshi/client";
 import { NextResponse } from "next/server";
 
 function toNumber(value: unknown) {
@@ -19,7 +23,63 @@ function toNumber(value: unknown) {
   return null;
 }
 
-function normalizePosition(position: Record<string, unknown>) {
+function getSafeKalshiError(rawText: string) {
+  if (!rawText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return rawText.slice(0, 500);
+  }
+}
+
+function getBestBidPriceDollars(
+  orderbookResponse: KalshiOrderbookResponse | null | undefined,
+  side: "yes" | "no" | "flat" | "unknown"
+) {
+  if (!orderbookResponse || (side !== "yes" && side !== "no")) {
+    return null;
+  }
+
+  const fixedPointLevels =
+    side === "yes"
+      ? orderbookResponse.orderbook_fp?.yes_dollars
+      : orderbookResponse.orderbook_fp?.no_dollars;
+
+  if (Array.isArray(fixedPointLevels) && fixedPointLevels.length > 0) {
+    const prices = fixedPointLevels
+      .map((level) => toNumber(level[0]))
+      .filter((price): price is number => price !== null);
+
+    if (prices.length > 0) {
+      return Math.max(...prices);
+    }
+  }
+
+  const legacyLevels =
+    side === "yes"
+      ? orderbookResponse.orderbook?.yes
+      : orderbookResponse.orderbook?.no;
+
+  if (Array.isArray(legacyLevels) && legacyLevels.length > 0) {
+    const prices = legacyLevels
+      .map((level) => toNumber(level[0]))
+      .filter((price): price is number => price !== null);
+
+    if (prices.length > 0) {
+      return Math.max(...prices) / 100;
+    }
+  }
+
+  return null;
+}
+
+function normalizePosition(
+  position: Record<string, unknown>,
+  orderbookResponse?: KalshiOrderbookResponse | null
+) {
   const positionFp = toNumber(position.position_fp);
   const marketExposureDollars = toNumber(position.market_exposure_dollars);
   const feesPaidDollars = toNumber(position.fees_paid_dollars);
@@ -45,6 +105,30 @@ function normalizePosition(position: Record<string, unknown>) {
           ? "no"
           : "flat";
 
+  const currentBidPrice = getBestBidPriceDollars(orderbookResponse, side);
+
+  const currentExitValueDollars =
+    contractCount !== null && currentBidPrice !== null
+      ? contractCount * currentBidPrice
+      : currentBidPrice === null && contractCount !== null
+        ? 0
+        : null;
+
+  const unrealizedPnlBeforeFeesDollars =
+    currentExitValueDollars !== null && marketExposureDollars !== null
+      ? currentExitValueDollars - marketExposureDollars
+      : null;
+
+  const unrealizedPnlAfterFeesDollars =
+    unrealizedPnlBeforeFeesDollars !== null
+      ? unrealizedPnlBeforeFeesDollars - (feesPaidDollars ?? 0)
+      : null;
+
+  const totalPnlDollars =
+    unrealizedPnlAfterFeesDollars !== null
+      ? unrealizedPnlAfterFeesDollars + (realizedPnlDollars ?? 0)
+      : null;
+
   return {
     ticker: String(position.ticker ?? ""),
     side,
@@ -55,21 +139,15 @@ function normalizePosition(position: Record<string, unknown>) {
     realizedPnlDollars,
     totalTradedDollars,
     estimatedEntryPrice,
+    currentBidPrice,
+    hasCurrentBid: currentBidPrice !== null,
+    currentExitValueDollars,
+    unrealizedPnlBeforeFeesDollars,
+    unrealizedPnlAfterFeesDollars,
+    totalPnlDollars,
     lastUpdatedTs: position.last_updated_ts ?? null,
     raw: position,
   };
-}
-
-function getSafeKalshiError(rawText: string) {
-  if (!rawText) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(rawText);
-  } catch {
-    return rawText.slice(0, 500);
-  }
 }
 
 export async function GET(request: Request) {
@@ -114,12 +192,41 @@ export async function GET(request: Request) {
 
     const marketPositions = result.data?.market_positions ?? [];
 
+    const enrichedPositions = await Promise.all(
+      marketPositions.map(async (position) => {
+        const ticker = position.ticker;
+
+        if (!ticker) {
+          return normalizePosition(position as Record<string, unknown>);
+        }
+
+        const orderbookResult = await getKalshiMarketOrderbook(
+          ticker,
+          credentials
+        );
+
+        if (!orderbookResult.ok) {
+          console.error("Kalshi orderbook request failed:", {
+            ticker,
+            status: orderbookResult.status,
+            statusText: orderbookResult.statusText,
+            body: getSafeKalshiError(orderbookResult.rawText),
+          });
+
+          return normalizePosition(position as Record<string, unknown>);
+        }
+
+        return normalizePosition(
+          position as Record<string, unknown>,
+          orderbookResult.data
+        );
+      })
+    );
+
     return NextResponse.json({
       ok: true,
-      count: marketPositions.length,
-      positions: marketPositions.map((position) =>
-        normalizePosition(position as Record<string, unknown>)
-      ),
+      count: enrichedPositions.length,
+      positions: enrichedPositions,
     });
   } catch (error) {
     console.error("Positions API failed:", error);

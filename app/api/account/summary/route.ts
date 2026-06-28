@@ -2,8 +2,10 @@ import { getServerUserFromRequest } from "@/lib/auth/getServerUser";
 import { getDecryptedKalshiCredentials } from "@/lib/data/credentialRepository";
 import {
   getKalshiBalance,
+  getKalshiMarketOrderbook,
   getKalshiPositions,
   type KalshiMarketPosition,
+  type KalshiOrderbookResponse,
 } from "@/lib/kalshi/client";
 import { NextResponse } from "next/server";
 
@@ -32,20 +34,12 @@ function pickBalanceValue(data: Record<string, unknown> | null) {
     return null;
   }
 
-  /*
-    Kalshi's balance endpoint commonly returns "balance" in cents.
-    Example: balance: 1981 means $19.81.
-  */
   const balanceInCents = toNumber(data.balance);
 
   if (balanceInCents !== null) {
     return centsToDollars(balanceInCents);
   }
 
-  /*
-    These are fallback names in case Kalshi changes or expands the response.
-    If the field name says dollars, treat it as already dollar-denominated.
-  */
   const dollarKeys = [
     "balance_dollars",
     "cash_balance_dollars",
@@ -61,15 +55,7 @@ function pickBalanceValue(data: Record<string, unknown> | null) {
     }
   }
 
-  /*
-    These fallback names are likely cent-denominated if they appear without
-    "_dollars" in the field name.
-  */
-  const centKeys = [
-    "cash_balance",
-    "available_balance",
-    "portfolio_value",
-  ];
+  const centKeys = ["cash_balance", "available_balance", "portfolio_value"];
 
   for (const key of centKeys) {
     const value = toNumber(data[key]);
@@ -82,39 +68,103 @@ function pickBalanceValue(data: Record<string, unknown> | null) {
   return null;
 }
 
-function summarizePositions(positions: KalshiMarketPosition[]) {
+function getBestBidPriceDollars(
+  orderbookResponse: KalshiOrderbookResponse | null | undefined,
+  side: "yes" | "no"
+) {
+  const fixedPointLevels =
+    side === "yes"
+      ? orderbookResponse?.orderbook_fp?.yes_dollars
+      : orderbookResponse?.orderbook_fp?.no_dollars;
+
+  if (Array.isArray(fixedPointLevels) && fixedPointLevels.length > 0) {
+    const prices = fixedPointLevels
+      .map((level) => toNumber(level[0]))
+      .filter((price): price is number => price !== null);
+
+    if (prices.length > 0) {
+      return Math.max(...prices);
+    }
+  }
+
+  const legacyLevels =
+    side === "yes"
+      ? orderbookResponse?.orderbook?.yes
+      : orderbookResponse?.orderbook?.no;
+
+  if (Array.isArray(legacyLevels) && legacyLevels.length > 0) {
+    const prices = legacyLevels
+      .map((level) => toNumber(level[0]))
+      .filter((price): price is number => price !== null);
+
+    if (prices.length > 0) {
+      return Math.max(...prices) / 100;
+    }
+  }
+
+  return null;
+}
+
+async function summarizePositionsWithPricing(
+  positions: KalshiMarketPosition[],
+  credentials: {
+    apiKeyId: string;
+    privateKey: string;
+  }
+) {
   let openPositionCount = 0;
   let totalExposureDollars = 0;
   let totalFeesPaidDollars = 0;
   let totalRealizedPnlDollars = 0;
+  let totalCurrentExitValueDollars = 0;
+  let totalUnrealizedPnlBeforeFeesDollars = 0;
+  let totalUnrealizedPnlAfterFeesDollars = 0;
 
   for (const position of positions) {
     const positionFp = toNumber(position.position_fp);
 
-    /*
-      These fields are named *_dollars, so keep them as dollar values.
-      Do not divide these by 100 unless we later confirm Kalshi is returning
-      fixed-point cents despite the field name.
-    */
-    const exposure = toNumber(position.market_exposure_dollars);
-    const fees = toNumber(position.fees_paid_dollars);
-    const realizedPnl = toNumber(position.realized_pnl_dollars);
-
-    if (positionFp !== null && positionFp !== 0) {
-      openPositionCount += 1;
+    if (positionFp === null || positionFp === 0) {
+      continue;
     }
 
-    if (exposure !== null) {
-      totalExposureDollars += exposure;
+    openPositionCount += 1;
+
+    const side = positionFp > 0 ? "yes" : "no";
+    const contractCount = Math.abs(positionFp);
+    const exposure = toNumber(position.market_exposure_dollars) ?? 0;
+    const fees = toNumber(position.fees_paid_dollars) ?? 0;
+    const realizedPnl = toNumber(position.realized_pnl_dollars) ?? 0;
+
+    totalExposureDollars += exposure;
+    totalFeesPaidDollars += fees;
+    totalRealizedPnlDollars += realizedPnl;
+
+    let currentExitValue = 0;
+
+    if (position.ticker) {
+      const orderbookResult = await getKalshiMarketOrderbook(
+        position.ticker,
+        credentials
+      );
+
+      if (orderbookResult.ok) {
+        const currentBidPrice = getBestBidPriceDollars(
+          orderbookResult.data,
+          side
+        );
+
+        if (currentBidPrice !== null) {
+          currentExitValue = contractCount * currentBidPrice;
+        }
+      }
     }
 
-    if (fees !== null) {
-      totalFeesPaidDollars += fees;
-    }
+    const unrealizedBeforeFees = currentExitValue - exposure;
+    const unrealizedAfterFees = unrealizedBeforeFees - fees;
 
-    if (realizedPnl !== null) {
-      totalRealizedPnlDollars += realizedPnl;
-    }
+    totalCurrentExitValueDollars += currentExitValue;
+    totalUnrealizedPnlBeforeFeesDollars += unrealizedBeforeFees;
+    totalUnrealizedPnlAfterFeesDollars += unrealizedAfterFees;
   }
 
   return {
@@ -122,6 +172,11 @@ function summarizePositions(positions: KalshiMarketPosition[]) {
     totalExposureDollars,
     totalFeesPaidDollars,
     totalRealizedPnlDollars,
+    totalCurrentExitValueDollars,
+    totalUnrealizedPnlBeforeFeesDollars,
+    totalUnrealizedPnlAfterFeesDollars,
+    totalPnlDollars:
+      totalRealizedPnlDollars + totalUnrealizedPnlAfterFeesDollars,
   };
 }
 
@@ -144,6 +199,10 @@ export async function GET(request: Request) {
         totalExposureDollars: null,
         totalFeesPaidDollars: null,
         totalRealizedPnlDollars: null,
+        totalCurrentExitValueDollars: null,
+        totalUnrealizedPnlBeforeFeesDollars: null,
+        totalUnrealizedPnlAfterFeesDollars: null,
+        totalPnlDollars: null,
         message: "Kalshi credentials are not saved.",
       });
     }
@@ -162,6 +221,10 @@ export async function GET(request: Request) {
         totalExposureDollars: null,
         totalFeesPaidDollars: null,
         totalRealizedPnlDollars: null,
+        totalCurrentExitValueDollars: null,
+        totalUnrealizedPnlBeforeFeesDollars: null,
+        totalUnrealizedPnlAfterFeesDollars: null,
+        totalPnlDollars: null,
         message: "Kalshi balance check failed.",
       });
     }
@@ -170,7 +233,10 @@ export async function GET(request: Request) {
       ? positionsResult.data?.market_positions ?? []
       : [];
 
-    const positionSummary = summarizePositions(marketPositions);
+    const positionSummary = await summarizePositionsWithPricing(
+      marketPositions,
+      credentials
+    );
 
     return NextResponse.json({
       ok: true,

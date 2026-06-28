@@ -12,6 +12,10 @@ type AccountSummary = {
   totalExposureDollars: number | null;
   totalFeesPaidDollars: number | null;
   totalRealizedPnlDollars: number | null;
+  totalCurrentExitValueDollars: number | null;
+  totalUnrealizedPnlBeforeFeesDollars: number | null;
+  totalUnrealizedPnlAfterFeesDollars: number | null;
+  totalPnlDollars: number | null;
   message: string;
 };
 
@@ -34,27 +38,37 @@ function formatNumber(value: number | null) {
   return value.toLocaleString();
 }
 
+function getPnlClass(value: number | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "mt-1 text-sm font-semibold text-[#f4f7f5]";
+  }
+
+  if (value > 0) {
+    return "mt-1 text-sm font-semibold text-[#22c55e]";
+  }
+
+  if (value < 0) {
+    return "mt-1 text-sm font-semibold text-[#fecaca]";
+  }
+
+  return "mt-1 text-sm font-semibold text-[#f4f7f5]";
+}
+
 function SummaryItem({
   label,
   value,
-  positive,
+  valueClassName,
 }: {
   label: string;
   value: string;
-  positive?: boolean;
+  valueClassName?: string;
 }) {
   return (
     <div className="rounded-xl border border-[#1f2a24] bg-[#0b120f] px-3 py-2">
       <p className="text-[11px] uppercase tracking-[0.18em] text-[#6f7b74]">
         {label}
       </p>
-      <p
-        className={
-          positive
-            ? "mt-1 text-sm font-semibold text-[#22c55e]"
-            : "mt-1 text-sm font-semibold text-[#f4f7f5]"
-        }
-      >
+      <p className={valueClassName ?? "mt-1 text-sm font-semibold text-[#f4f7f5]"}>
         {value}
       </p>
     </div>
@@ -177,7 +191,7 @@ export function AppNav() {
         </div>
 
         {user ? (
-          <div className="grid gap-3 md:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
             <SummaryItem
               label="Kalshi"
               value={
@@ -187,7 +201,11 @@ export function AppNav() {
                     ? "Checking"
                     : "Not connected"
               }
-              positive={Boolean(summary?.kalshiConnected)}
+              valueClassName={
+                summary?.kalshiConnected
+                  ? "mt-1 text-sm font-semibold text-[#22c55e]"
+                  : "mt-1 text-sm font-semibold text-[#f4f7f5]"
+              }
             />
 
             <SummaryItem
@@ -206,12 +224,24 @@ export function AppNav() {
             />
 
             <SummaryItem
-              label="Realized P/L"
-              value={formatDollars(summary?.totalRealizedPnlDollars ?? null)}
-              positive={
-                typeof summary?.totalRealizedPnlDollars === "number" &&
-                summary.totalRealizedPnlDollars > 0
-              }
+              label="Exit value"
+              value={formatDollars(summary?.totalCurrentExitValueDollars ?? null)}
+            />
+
+            <SummaryItem
+              label="Unrealized P/L"
+              value={formatDollars(
+                summary?.totalUnrealizedPnlAfterFeesDollars ?? null
+              )}
+              valueClassName={getPnlClass(
+                summary?.totalUnrealizedPnlAfterFeesDollars ?? null
+              )}
+            />
+
+            <SummaryItem
+              label="Total P/L"
+              value={formatDollars(summary?.totalPnlDollars ?? null)}
+              valueClassName={getPnlClass(summary?.totalPnlDollars ?? null)}
             />
           </div>
         ) : null}

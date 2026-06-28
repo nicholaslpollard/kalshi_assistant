@@ -14,6 +14,12 @@ type NormalizedPosition = {
   realizedPnlDollars: number | null;
   totalTradedDollars: number | null;
   estimatedEntryPrice: number | null;
+  currentBidPrice: number | null;
+  hasCurrentBid: boolean;
+  currentExitValueDollars: number | null;
+  unrealizedPnlBeforeFeesDollars: number | null;
+  unrealizedPnlAfterFeesDollars: number | null;
+  totalPnlDollars: number | null;
   lastUpdatedTs: string | null;
 };
 
@@ -38,12 +44,17 @@ function formatNumber(value: number | null, digits = 2) {
   });
 }
 
-function formatPrice(value: number | null) {
+function formatContractPrice(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
-    return "—";
+    return "No bid";
   }
 
-  return `${(value * 100).toFixed(2)}¢`;
+  return value.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatDate(value: string | null) {
@@ -58,6 +69,22 @@ function formatDate(value: string | null) {
   }
 
   return date.toLocaleString();
+}
+
+function getPnlClass(value: number | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "text-[#f4f7f5]";
+  }
+
+  if (value > 0) {
+    return "text-[#22c55e]";
+  }
+
+  if (value < 0) {
+    return "text-[#fecaca]";
+  }
+
+  return "text-[#f4f7f5]";
 }
 
 function SideBadge({ side }: { side: NormalizedPosition["side"] }) {
@@ -114,15 +141,15 @@ export function PositionsClient() {
 
       const body = await response.json();
 
-    if (!response.ok) {
-         const kalshiDetail = body?.kalshiBody
-        ? ` Kalshi said: ${JSON.stringify(body.kalshiBody)}`
-    : "";
+      if (!response.ok) {
+        const kalshiDetail = body?.kalshiBody
+          ? ` Kalshi said: ${JSON.stringify(body.kalshiBody)}`
+          : "";
 
-  throw new Error(
-    `${body?.error ?? "Unable to load positions."}${kalshiDetail}`
-  );
-}
+        throw new Error(
+          `${body?.error ?? "Unable to load positions."}${kalshiDetail}`
+        );
+      }
 
       setPositions(body.positions ?? []);
       setLoaded(true);
@@ -193,7 +220,9 @@ export function PositionsClient() {
 
       {!error && loaded && positions.length === 0 ? (
         <section className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
-          <h2 className="text-xl font-bold text-white">No open positions found</h2>
+          <h2 className="text-xl font-bold text-white">
+            No open positions found
+          </h2>
           <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
             Kalshi returned no positions with a non-zero position count.
           </p>
@@ -210,7 +239,7 @@ export function PositionsClient() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[1150px] border-collapse text-left text-sm">
               <thead className="bg-[#0b120f] text-[#a8b3ad]">
                 <tr>
                   <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
@@ -223,16 +252,25 @@ export function PositionsClient() {
                     Contracts
                   </th>
                   <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
+                    Entry
+                  </th>
+                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
+                    Current bid
+                  </th>
+                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
                     Exposure
                   </th>
                   <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Est. entry
+                    Exit value
                   </th>
                   <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
                     Fees
                   </th>
                   <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Realized P/L
+                    Unrealized P/L
+                  </th>
+                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
+                    Total P/L
                   </th>
                   <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
                     Updated
@@ -255,16 +293,35 @@ export function PositionsClient() {
                       {formatNumber(position.contractCount)}
                     </td>
                     <td className="px-4 py-4 text-[#f4f7f5]">
+                      {formatContractPrice(position.estimatedEntryPrice)}
+                    </td>
+                    <td className="px-4 py-4 text-[#f4f7f5]">
+                      {position.hasCurrentBid
+                        ? formatContractPrice(position.currentBidPrice)
+                        : "No bid"}
+                    </td>
+                    <td className="px-4 py-4 text-[#f4f7f5]">
                       {formatDollars(position.marketExposureDollars)}
                     </td>
                     <td className="px-4 py-4 text-[#f4f7f5]">
-                      {formatPrice(position.estimatedEntryPrice)}
+                      {formatDollars(position.currentExitValueDollars)}
                     </td>
                     <td className="px-4 py-4 text-[#f4f7f5]">
                       {formatDollars(position.feesPaidDollars)}
                     </td>
-                    <td className="px-4 py-4 text-[#f4f7f5]">
-                      {formatDollars(position.realizedPnlDollars)}
+                    <td
+                      className={`px-4 py-4 font-semibold ${getPnlClass(
+                        position.unrealizedPnlAfterFeesDollars
+                      )}`}
+                    >
+                      {formatDollars(position.unrealizedPnlAfterFeesDollars)}
+                    </td>
+                    <td
+                      className={`px-4 py-4 font-semibold ${getPnlClass(
+                        position.totalPnlDollars
+                      )}`}
+                    >
+                      {formatDollars(position.totalPnlDollars)}
                     </td>
                     <td className="px-4 py-4 text-[#a8b3ad]">
                       {formatDate(position.lastUpdatedTs)}
