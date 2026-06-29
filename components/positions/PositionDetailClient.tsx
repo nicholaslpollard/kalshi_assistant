@@ -61,6 +61,63 @@ type PositionDetail = {
   diagnostics: Record<string, unknown>;
 };
 
+type WeatherDetail = {
+  ok: boolean;
+  ticker: string;
+  parsed: {
+    ticker: string;
+    eventTicker: string | null;
+    marketCode: string | null;
+    eventDate: string | null;
+    bucketToken: string | null;
+    bucketLabel: string | null;
+  };
+  config: {
+    code: string;
+    displayName: string;
+    timezone: string;
+    latitude: number;
+    longitude: number;
+    nwsObservationStation: string;
+    settlementNote: string;
+  };
+  nws: {
+    forecastSummary: {
+      periodName: unknown;
+      temperatureF: number | null;
+      shortForecast: unknown;
+      detailedForecast: unknown;
+      selectedForecastDate: string | null;
+      matchedEventDate: boolean;
+      rawPeriods: Record<string, unknown>[];
+    } | null;
+    observationSummary: {
+      observedMaxF: number | null;
+      latestTempF: number | null;
+      latestTimestamp: string | null;
+      observationCount: number;
+      eventDate: string;
+    };
+    alerts: Record<string, unknown>;
+  };
+  openMeteo: {
+    dailyMaxF: number | null;
+    eventHourly: {
+      time: unknown;
+      temperatureF: number | null;
+    }[];
+    rawDaily: Record<string, unknown> | null;
+  };
+  bucketRead: {
+    heldBucket: string | null;
+    observedBucket: string | null;
+    nwsBucket: string | null;
+    openMeteoBucket: string | null;
+    effectiveObservedFloorF: number | null;
+    observedFloorStatus: "not_started" | "active" | "complete" | "unknown";
+  };
+};
+
 function formatDollars(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
     return "—";
@@ -80,6 +137,14 @@ function formatNumber(value: number | null, digits = 2) {
   return value.toLocaleString(undefined, {
     maximumFractionDigits: digits,
   });
+}
+
+function formatTemperature(value: number | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  return `${value.toFixed(1)}°F`;
 }
 
 function formatPrice(value: number | null) {
@@ -131,6 +196,40 @@ function pnlClass(value: number | null) {
   }
 
   return "text-[#f4f7f5]";
+}
+
+function stringValue(value: unknown) {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return "—";
+}
+
+function observedFloorLabel(
+  status: WeatherDetail["bucketRead"]["observedFloorStatus"],
+  value: number | null
+) {
+  if (status === "not_started") {
+    return "Not started yet";
+  }
+
+  return formatTemperature(value);
+}
+
+function observedBucketLabel(
+  status: WeatherDetail["bucketRead"]["observedFloorStatus"],
+  value: string | null
+) {
+  if (status === "not_started") {
+    return "Not started yet";
+  }
+
+  return value ?? "—";
 }
 
 function DataCard({
@@ -260,11 +359,291 @@ function BasketMarketsTable({ markets }: { markets: BasketMarket[] }) {
   );
 }
 
+function WeatherHourlyTable({
+  hourly,
+}: {
+  hourly: WeatherDetail["openMeteo"]["eventHourly"];
+}) {
+  const filtered = hourly
+    .filter((item) => item.temperatureF !== null)
+    .slice(0, 24);
+
+  if (filtered.length === 0) {
+    return (
+      <p className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 text-sm text-[#a8b3ad]">
+        No hourly Open-Meteo data returned for the event date.
+      </p>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-[#1f2a24] bg-[#0b120f]">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[700px] text-left text-sm">
+          <thead className="text-[#a8b3ad]">
+            <tr>
+              <th className="border-b border-[#1f2a24] px-4 py-3">Time</th>
+              <th className="border-b border-[#1f2a24] px-4 py-3">
+                Temperature
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((item) => (
+              <tr key={String(item.time)} className="border-b border-[#1f2a24]">
+                <td className="px-4 py-3 text-white">{String(item.time)}</td>
+                <td className="px-4 py-3 text-white">
+                  {formatTemperature(item.temperatureF)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ExecutiveSummary({
+  detail,
+  weather,
+}: {
+  detail: PositionDetail;
+  weather: WeatherDetail | null;
+}) {
+  const position = detail.position;
+
+  return (
+    <Section eyebrow="Command Center" title="Executive snapshot">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <DataCard
+          label="Held contract"
+          value={weather?.bucketRead.heldBucket ?? detail.ticker}
+        />
+        <DataCard
+          label="Weather read"
+          value={
+            weather
+              ? `NWS ${weather.bucketRead.nwsBucket ?? "—"} / OM ${
+                  weather.bucketRead.openMeteoBucket ?? "—"
+                }`
+              : "Loading weather"
+          }
+        />
+        <DataCard
+          label="Current bid"
+          value={position.hasCurrentBid ? formatPrice(position.currentBidPrice) : "No bid"}
+        />
+        <DataCard
+          label="Unrealized P/L"
+          value={formatDollars(position.unrealizedPnlAfterFeesDollars)}
+          valueClassName={`mt-2 text-xl font-bold ${pnlClass(
+            position.unrealizedPnlAfterFeesDollars
+          )}`}
+        />
+      </div>
+    </Section>
+  );
+}
+
+function PositionWeatherPanel({
+  ticker,
+  weather,
+  loading,
+  error,
+  onRefresh,
+}: {
+  ticker: string;
+  weather: WeatherDetail | null;
+  loading: boolean;
+  error: string;
+  onRefresh: () => void;
+}) {
+  if (loading && !weather) {
+    return (
+      <Section eyebrow="Weather" title="Weather vs held contract">
+        <p className="text-sm text-[#a8b3ad]">Loading weather data...</p>
+      </Section>
+    );
+  }
+
+  if (error) {
+    return (
+      <Section eyebrow="Weather" title="Weather vs held contract">
+        <div className="rounded-2xl border border-[#ef4444]/40 bg-[#ef4444]/10 p-4 text-sm text-[#fecaca]">
+          {error}
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="mt-4 rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a]"
+        >
+          Retry weather load
+        </button>
+      </Section>
+    );
+  }
+
+  if (!weather) {
+    return (
+      <Section eyebrow="Weather" title="Weather vs held contract">
+        <p className="text-sm text-[#a8b3ad]">
+          No weather data loaded for {ticker}.
+        </p>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="mt-4 rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a]"
+        >
+          Load weather
+        </button>
+      </Section>
+    );
+  }
+
+  const activeAlertCount = Array.isArray(weather.nws.alerts.features)
+    ? weather.nws.alerts.features.length
+    : 0;
+
+  return (
+    <>
+      <Section eyebrow="Weather Summary" title="Weather vs held contract">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <DataCard label="Location" value={weather.config.displayName} />
+          <DataCard label="Event date" value={weather.parsed.eventDate ?? "—"} />
+          <DataCard label="Held bucket" value={weather.bucketRead.heldBucket ?? "—"} />
+          <DataCard
+            label="Observed bucket"
+            value={observedBucketLabel(
+              weather.bucketRead.observedFloorStatus,
+              weather.bucketRead.observedBucket
+            )}
+          />
+          <DataCard
+            label="NWS bucket"
+            value={weather.bucketRead.nwsBucket ?? "—"}
+          />
+          <DataCard
+            label="Open-Meteo bucket"
+            value={weather.bucketRead.openMeteoBucket ?? "—"}
+          />
+          <DataCard
+            label="Observed floor"
+            value={observedFloorLabel(
+              weather.bucketRead.observedFloorStatus,
+              weather.bucketRead.effectiveObservedFloorF
+            )}
+          />
+          <DataCard
+            label="Station"
+            value={weather.config.nwsObservationStation}
+          />
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5 text-sm leading-6 text-[#a8b3ad]">
+          <p>
+            This compares your held Kalshi basket against the event-date
+            observation floor, the NWS forecast, and the Open-Meteo model. The
+            observed floor is only used once the event date has started.
+          </p>
+          <p className="mt-3 text-[#6f7b74]">{weather.config.settlementNote}</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="mt-5 rounded-xl border border-[#1f2a24] px-5 py-3 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? "Refreshing weather..." : "Refresh weather"}
+        </button>
+      </Section>
+
+      <Section eyebrow="NWS" title="Forecast and observations">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <DataCard
+            label="NWS forecast high"
+            value={formatTemperature(weather.nws.forecastSummary?.temperatureF ?? null)}
+          />
+          <DataCard
+            label="Forecast period"
+            value={stringValue(weather.nws.forecastSummary?.periodName)}
+          />
+          <DataCard
+            label="Forecast date"
+            value={weather.nws.forecastSummary?.selectedForecastDate ?? "—"}
+          />
+          <DataCard
+            label="Latest event obs"
+            value={observedFloorLabel(
+              weather.bucketRead.observedFloorStatus,
+              weather.nws.observationSummary.latestTempF
+            )}
+          />
+          <DataCard
+            label="Observed max"
+            value={observedFloorLabel(
+              weather.bucketRead.observedFloorStatus,
+              weather.nws.observationSummary.observedMaxF
+            )}
+          />
+          <DataCard
+            label="Observation count"
+            value={
+              weather.bucketRead.observedFloorStatus === "not_started"
+                ? "Not started yet"
+                : formatNumber(weather.nws.observationSummary.observationCount, 0)
+            }
+          />
+          <DataCard label="Active alerts" value={formatNumber(activeAlertCount, 0)} />
+          <DataCard
+            label="Short forecast"
+            value={stringValue(weather.nws.forecastSummary?.shortForecast)}
+          />
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5 text-sm leading-6 text-[#a8b3ad]">
+          <p className="font-semibold text-white">NWS detailed forecast</p>
+          <p className="mt-2">
+            {stringValue(weather.nws.forecastSummary?.detailedForecast)}
+          </p>
+        </div>
+      </Section>
+
+      <Section eyebrow="Open-Meteo" title="Model forecast">
+        <div className="grid gap-4 md:grid-cols-3">
+          <DataCard
+            label="Daily max"
+            value={formatTemperature(weather.openMeteo.dailyMaxF)}
+          />
+          <DataCard
+            label="Model bucket"
+            value={weather.bucketRead.openMeteoBucket ?? "—"}
+          />
+          <DataCard
+            label="Hourly points"
+            value={formatNumber(weather.openMeteo.eventHourly.length, 0)}
+          />
+        </div>
+
+        <div className="mt-6">
+          <WeatherHourlyTable hourly={weather.openMeteo.eventHourly} />
+        </div>
+      </Section>
+    </>
+  );
+}
+
 export function PositionDetailClient({ ticker }: { ticker: string }) {
   const [detail, setDetail] = useState<PositionDetail | null>(null);
+  const [weather, setWeather] = useState<WeatherDetail | null>(null);
+
   const [loading, setLoading] = useState(false);
+  const [loadingWeather, setLoadingWeather] = useState(false);
+
   const [aiReviewEnabled, setAiReviewEnabled] = useState(false);
   const [error, setError] = useState("");
+  const [weatherError, setWeatherError] = useState("");
 
   async function loadDetail() {
     setLoading(true);
@@ -308,8 +687,40 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
     }
   }
 
+  async function loadWeather() {
+    setLoadingWeather(true);
+    setWeatherError("");
+
+    try {
+      const response = await fetch(
+        `/api/positions/${encodeURIComponent(ticker)}/weather`,
+        {
+          method: "GET",
+        }
+      );
+
+      const body = await response.json();
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to load weather data.");
+      }
+
+      setWeather(body);
+    } catch (err) {
+      console.error(err);
+
+      const message =
+        err instanceof Error ? err.message : "Unable to load weather data.";
+
+      setWeatherError(message);
+    } finally {
+      setLoadingWeather(false);
+    }
+  }
+
   useEffect(() => {
     void loadDetail();
+    void loadWeather();
   }, [ticker]);
 
   if (loading && !detail) {
@@ -361,52 +772,67 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
 
             <button
               type="button"
-              onClick={() => loadDetail()}
-              disabled={loading}
+              onClick={() => {
+                void loadDetail();
+                void loadWeather();
+              }}
+              disabled={loading || loadingWeather}
               className="rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? "Refreshing..." : "Refresh detail"}
+              {loading || loadingWeather ? "Refreshing..." : "Refresh all"}
             </button>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <DataCard label="Side" value={position.side.toUpperCase()} />
-        <DataCard
-          label="Owned contracts"
-          value={formatNumber(position.contractCount)}
-        />
-        <DataCard label="Entry" value={formatPrice(position.estimatedEntryPrice)} />
-        <DataCard
-          label="Current bid"
-          value={
-            position.hasCurrentBid ? formatPrice(position.currentBidPrice) : "No bid"
-          }
-        />
-        <DataCard
-          label="Exposure"
-          value={formatDollars(position.marketExposureDollars)}
-        />
-        <DataCard
-          label="Exit value"
-          value={formatDollars(position.currentExitValueDollars)}
-        />
-        <DataCard
-          label="Unrealized P/L"
-          value={formatDollars(position.unrealizedPnlAfterFeesDollars)}
-          valueClassName={`mt-2 text-xl font-bold ${pnlClass(
-            position.unrealizedPnlAfterFeesDollars
-          )}`}
-        />
-        <DataCard
-          label="Total P/L"
-          value={formatDollars(position.totalPnlDollars)}
-          valueClassName={`mt-2 text-xl font-bold ${pnlClass(
-            position.totalPnlDollars
-          )}`}
-        />
-      </section>
+      <ExecutiveSummary detail={detail} weather={weather} />
+
+      <Section eyebrow="Contract" title="Contract you hold">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <DataCard label="Side" value={position.side.toUpperCase()} />
+          <DataCard
+            label="Owned contracts"
+            value={formatNumber(position.contractCount)}
+          />
+          <DataCard label="Entry" value={formatPrice(position.estimatedEntryPrice)} />
+          <DataCard
+            label="Current bid"
+            value={
+              position.hasCurrentBid ? formatPrice(position.currentBidPrice) : "No bid"
+            }
+          />
+          <DataCard
+            label="Exposure"
+            value={formatDollars(position.marketExposureDollars)}
+          />
+          <DataCard
+            label="Exit value"
+            value={formatDollars(position.currentExitValueDollars)}
+          />
+          <DataCard
+            label="Unrealized P/L"
+            value={formatDollars(position.unrealizedPnlAfterFeesDollars)}
+            valueClassName={`mt-2 text-xl font-bold ${pnlClass(
+              position.unrealizedPnlAfterFeesDollars
+            )}`}
+          />
+          <DataCard
+            label="Total P/L"
+            value={formatDollars(position.totalPnlDollars)}
+            valueClassName={`mt-2 text-xl font-bold ${pnlClass(
+              position.totalPnlDollars
+            )}`}
+          />
+        </div>
+      </Section>
+
+      <PositionWeatherPanel
+        ticker={ticker}
+        weather={weather}
+        loading={loadingWeather}
+        error={weatherError}
+        onRefresh={() => void loadWeather()}
+      />
 
       <Section eyebrow="Summary" title="Sell-vs-hold decision math">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -454,6 +880,15 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
         </div>
       </Section>
 
+      <Section eyebrow="Kalshi" title="Event basket market table">
+        <p className="mb-5 text-sm leading-6 text-[#a8b3ad]">
+          Sibling markets from the same Kalshi event. The held basket is
+          highlighted. YES bid is the current sell-now bid for YES holders. YES
+          ask estimate is inferred from the NO bid where available.
+        </p>
+        <BasketMarketsTable markets={detail.basketMarkets} />
+      </Section>
+
       <Section eyebrow="Kalshi" title="Position data">
         <div className="grid gap-4 md:grid-cols-3">
           <DataCard
@@ -469,29 +904,6 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
             value={formatDollars(position.realizedPnlDollars)}
           />
         </div>
-      </Section>
-
-      <Section eyebrow="Kalshi" title="Event basket market table">
-        <p className="mb-5 text-sm leading-6 text-[#a8b3ad]">
-          Sibling markets from the same Kalshi event. The held basket is
-          highlighted. YES bid is the current sell-now bid for YES holders. YES
-          ask estimate is inferred from the NO bid where available.
-        </p>
-        <BasketMarketsTable markets={detail.basketMarkets} />
-      </Section>
-
-      <Section eyebrow="Weather" title="NWS data">
-        <p className="text-sm leading-6 text-[#a8b3ad]">
-          NWS forecast, observation station, latest observation, observed max,
-          and alerts will be added in the next milestone.
-        </p>
-      </Section>
-
-      <Section eyebrow="Weather" title="Open-Meteo data">
-        <p className="text-sm leading-6 text-[#a8b3ad]">
-          Open-Meteo daily max, hourly temperature forecast, and model comparison
-          will be added in the next milestone.
-        </p>
       </Section>
 
       <Section eyebrow="Review" title="Position review">
@@ -525,20 +937,23 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
         </button>
       </Section>
 
-      <Section eyebrow="Debug" title="Raw Kalshi data">
+      <Section eyebrow="Debug" title="Raw data">
         <details className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
           <summary className="cursor-pointer font-semibold text-white">
-            Show raw position, market, event, basket, orderbook, and diagnostics
+            Show raw Kalshi and weather data
           </summary>
           <pre className="mt-4 max-h-[500px] overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-[#a8b3ad]">
             {JSON.stringify(
               {
-                position: detail.position.raw,
-                market: detail.market,
-                event: detail.event,
-                basketMarkets: detail.basketMarkets,
-                orderbook: detail.orderbook,
-                diagnostics: detail.diagnostics,
+                kalshi: {
+                  position: detail.position.raw,
+                  market: detail.market,
+                  event: detail.event,
+                  basketMarkets: detail.basketMarkets,
+                  orderbook: detail.orderbook,
+                  diagnostics: detail.diagnostics,
+                },
+                weather,
               },
               null,
               2
