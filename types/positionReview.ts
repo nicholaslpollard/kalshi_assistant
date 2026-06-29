@@ -43,3 +43,17 @@ export type PositionReviewResult = {
   aiReviewRequested: boolean;
   aiReviewNote: string | null;
 };
+
+export type PositionAiReviewResult = {
+  action: PositionReviewAction;
+  confidence: "low" | "medium" | "high";
+  agreementWithDeterministicReview: "agree" | "partially_agree" | "disagree";
+  summary: string;
+  keyReasons: string[];
+  keyRisks: string[];
+  sellNowCase: string;
+  holdCase: string;
+  rollCase: string | null;
+  whatWouldChangeMyMind: string[];
+  recommendedMonitoring: string[];
+};

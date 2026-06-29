@@ -293,8 +293,6 @@ export function runDeterministicPositionReview(
         }
       : null,
     aiReviewRequested,
-    aiReviewNote: aiReviewRequested
-      ? "AI review is toggled on, but this milestone only returns the deterministic review. The next milestone will send this structured review package to OpenAI."
-      : null,
+    aiReviewNote: null,
   };
 }

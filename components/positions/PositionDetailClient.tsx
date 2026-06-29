@@ -163,6 +163,28 @@ type PositionReview = {
   aiReviewNote: string | null;
 };
 
+type PositionAiReview = {
+  action:
+    | "HOLD"
+    | "WATCH_CLOSELY"
+    | "HOLD_OR_TRIM_PROFIT"
+    | "SELL_TO_LOCK_PROFIT"
+    | "SELL_FULL_POSITION"
+    | "CUT_LOSS"
+    | "ROLL_TO_BETTER_BUCKET"
+    | "NO_ACTION";
+  confidence: "low" | "medium" | "high";
+  agreementWithDeterministicReview: "agree" | "partially_agree" | "disagree";
+  summary: string;
+  keyReasons: string[];
+  keyRisks: string[];
+  sellNowCase: string;
+  holdCase: string;
+  rollCase: string | null;
+  whatWouldChangeMyMind: string[];
+  recommendedMonitoring: string[];
+};
+
 function formatDollars(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
     return "—";
@@ -799,6 +821,126 @@ function ReviewResultPanel({ review }: { review: PositionReview }) {
   );
 }
 
+
+function AiReviewResultPanel({ aiReview }: { aiReview: PositionAiReview }) {
+  return (
+    <div className="mt-6 space-y-4">
+      <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5">
+        <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
+          AI review
+        </p>
+        <h3 className="mt-2 text-2xl font-bold text-[#bae6fd]">
+          {aiReview.action}
+        </h3>
+        <p className="mt-2 text-sm text-[#bae6fd]">
+          Confidence:{" "}
+          <span className="font-semibold text-white">
+            {aiReview.confidence.toUpperCase()}
+          </span>{" "}
+          · Deterministic agreement:{" "}
+          <span className="font-semibold text-white">
+            {aiReview.agreementWithDeterministicReview.replace("_", " ")}
+          </span>
+        </p>
+        <p className="mt-4 text-sm leading-6 text-[#f4f7f5]">
+          {aiReview.summary}
+        </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">AI reasons</h4>
+          {aiReview.keyReasons.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+              {aiReview.keyReasons.map((reason) => (
+                <li key={reason}>• {reason}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-[#a8b3ad]">
+              No AI reasons were returned.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">AI risks</h4>
+          {aiReview.keyRisks.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+              {aiReview.keyRisks.map((risk) => (
+                <li key={risk}>• {risk}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-[#a8b3ad]">
+              No AI risks were returned.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Sell-now case</h4>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.sellNowCase}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Hold case</h4>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.holdCase}
+          </p>
+        </div>
+      </div>
+
+      {aiReview.rollCase ? (
+        <div className="rounded-2xl border border-[#facc15]/30 bg-[#facc15]/10 p-5">
+          <h4 className="font-semibold text-[#fde68a]">Roll discussion</h4>
+          <p className="mt-3 text-sm leading-6 text-[#fde68a]">
+            {aiReview.rollCase}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">
+            What would change the review
+          </h4>
+          {aiReview.whatWouldChangeMyMind.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+              {aiReview.whatWouldChangeMyMind.map((item) => (
+                <li key={item}>• {item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-[#a8b3ad]">
+              No change conditions were returned.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Recommended monitoring</h4>
+          {aiReview.recommendedMonitoring.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+              {aiReview.recommendedMonitoring.map((item) => (
+                <li key={item}>• {item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-[#a8b3ad]">
+              No monitoring items were returned.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PositionDetailClient({ ticker }: { ticker: string }) {
   const [detail, setDetail] = useState<PositionDetail | null>(null);
   const [weather, setWeather] = useState<WeatherDetail | null>(null);
@@ -808,11 +950,14 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
 
   const [aiReviewEnabled, setAiReviewEnabled] = useState(false);
   const [review, setReview] = useState<PositionReview | null>(null);
+  const [aiReview, setAiReview] = useState<PositionAiReview | null>(null);
   const [loadingReview, setLoadingReview] = useState(false);
+  const [loadingAiReview, setLoadingAiReview] = useState(false);
 
   const [error, setError] = useState("");
   const [weatherError, setWeatherError] = useState("");
   const [reviewError, setReviewError] = useState("");
+  const [aiReviewError, setAiReviewError] = useState("");
 
   async function loadDetail() {
     setLoading(true);
@@ -887,6 +1032,60 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
     }
   }
 
+
+  async function runAiReview(deterministicReview: PositionReview) {
+    if (!detail) {
+      return;
+    }
+
+    setLoadingAiReview(true);
+    setAiReviewError("");
+
+    try {
+      const user = firebaseAuth.currentUser;
+
+      if (!user) {
+        throw new Error("You must be signed in.");
+      }
+
+      const idToken = await user.getIdToken();
+
+      const response = await fetch(
+        `/api/positions/${encodeURIComponent(ticker)}/ai-review`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            position: detail.position,
+            weather,
+            basketMarkets: detail.basketMarkets,
+            deterministicReview,
+          }),
+        }
+      );
+
+      const body = await response.json();
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to run AI review.");
+      }
+
+      setAiReview(body.aiReview);
+    } catch (err) {
+      console.error(err);
+
+      const message =
+        err instanceof Error ? err.message : "Unable to run AI review.";
+
+      setAiReviewError(message);
+    } finally {
+      setLoadingAiReview(false);
+    }
+  }
+
   async function runPositionReview() {
     if (!detail) {
       return;
@@ -894,6 +1093,8 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
 
     setLoadingReview(true);
     setReviewError("");
+    setAiReview(null);
+    setAiReviewError("");
 
     try {
       const response = await fetch(
@@ -919,6 +1120,10 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
       }
 
       setReview(body.review);
+
+      if (aiReviewEnabled) {
+        await runAiReview(body.review);
+      }
     } catch (err) {
       console.error(err);
 
@@ -1145,10 +1350,14 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
         <button
           type="button"
           onClick={() => void runPositionReview()}
-          disabled={loadingReview}
+          disabled={loadingReview || loadingAiReview}
           className="mt-5 rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {loadingReview ? "Running review..." : "Run Position Review"}
+          {loadingReview
+            ? "Running review..."
+            : loadingAiReview
+              ? "Running AI review..."
+              : "Run Position Review"}
         </button>
 
         {reviewError ? (
@@ -1158,6 +1367,20 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
         ) : null}
 
         {review ? <ReviewResultPanel review={review} /> : null}
+
+        {loadingAiReview ? (
+          <div className="mt-5 rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-4 text-sm text-[#bae6fd]">
+            Running AI review...
+          </div>
+        ) : null}
+
+        {aiReviewError ? (
+          <div className="mt-5 rounded-2xl border border-[#ef4444]/40 bg-[#ef4444]/10 p-4 text-sm text-[#fecaca]">
+            {aiReviewError}
+          </div>
+        ) : null}
+
+        {aiReview ? <AiReviewResultPanel aiReview={aiReview} /> : null}
       </Section>
 
       <Section eyebrow="Debug" title="Raw data">
@@ -1177,6 +1400,8 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
                   diagnostics: detail.diagnostics,
                 },
                 weather,
+                review,
+                aiReview,
               },
               null,
               2
