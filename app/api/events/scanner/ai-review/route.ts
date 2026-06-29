@@ -28,6 +28,21 @@ type AppCandidateBasket = {
   status: string | null;
 } | null;
 
+const HOURLY_TEMPERATURE_SERIES_CONFIG: Record<
+  string,
+  {
+    marketCode: string;
+    displayName: string;
+    timezone: string;
+  }
+> = {
+  KXTEMPNYCH: {
+    marketCode: "NYC",
+    displayName: "New York, NY hourly temperature",
+    timezone: "America/New_York",
+  },
+};
+
 function toNumber(value: unknown) {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
@@ -187,6 +202,93 @@ function normalizeAppCandidateBasket(value: unknown): AppCandidateBasket {
   };
 }
 
+function parseHourlyEventTicker(eventTicker: string, seriesTicker: string) {
+  const escapedSeries = seriesTicker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = eventTicker.match(
+    new RegExp(`^${escapedSeries}-(\\d{2})([A-Z]{3})(\\d{2})(\\d{2})$`, "i")
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const [, yearText, monthTextRaw, dayText, hourText] = match;
+  const monthText = monthTextRaw.toUpperCase();
+
+  const monthMap: Record<string, string> = {
+    JAN: "01",
+    FEB: "02",
+    MAR: "03",
+    APR: "04",
+    MAY: "05",
+    JUN: "06",
+    JUL: "07",
+    AUG: "08",
+    SEP: "09",
+    OCT: "10",
+    NOV: "11",
+    DEC: "12",
+  };
+
+  const month = monthMap[monthText];
+
+  if (!month) {
+    return null;
+  }
+
+  const eventHourLocal = Number(hourText);
+
+  if (!Number.isFinite(eventHourLocal)) {
+    return null;
+  }
+
+  return {
+    eventDate: `20${yearText}-${month}-${dayText}`,
+    eventHourLocal,
+    eventDateTimeLocalLabel: `20${yearText}-${month}-${dayText} ${String(
+      eventHourLocal
+    ).padStart(2, "0")}:00 local`,
+  };
+}
+
+function getDailyEventContext(eventTicker: string) {
+  const parsed = parseWeatherTicker(`${eventTicker}-B0`);
+
+  if (!parsed.marketCode || !parsed.eventDate) {
+    return null;
+  }
+
+  return {
+    family: "daily_high",
+    marketCode: parsed.marketCode,
+    eventDate: parsed.eventDate,
+    eventHourLocal: null as number | null,
+    eventDateTimeLocalLabel: null as string | null,
+  };
+}
+
+function getHourlyEventContext(eventTicker: string, seriesTicker: string) {
+  const hourlyConfig = HOURLY_TEMPERATURE_SERIES_CONFIG[seriesTicker];
+
+  if (!hourlyConfig) {
+    return null;
+  }
+
+  const parsed = parseHourlyEventTicker(eventTicker, seriesTicker);
+
+  if (!parsed) {
+    return null;
+  }
+
+  return {
+    family: "hourly_temperature",
+    marketCode: hourlyConfig.marketCode,
+    eventDate: parsed.eventDate,
+    eventHourLocal: parsed.eventHourLocal,
+    eventDateTimeLocalLabel: parsed.eventDateTimeLocalLabel,
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const user = await getServerUserFromRequest(request);
@@ -239,20 +341,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const parsed = parseWeatherTicker(`${eventTicker}-B0`);
+    const eventContext =
+      getHourlyEventContext(eventTicker, seriesTicker) ??
+      getDailyEventContext(eventTicker);
 
-    if (!parsed.marketCode || !parsed.eventDate) {
+    if (!eventContext) {
       return NextResponse.json(
         { error: "Unable to parse weather event ticker." },
         { status: 400 }
       );
     }
 
-    const config = WEATHER_MARKETS[parsed.marketCode];
+    const config = WEATHER_MARKETS[eventContext.marketCode];
 
     if (!config) {
       return NextResponse.json(
-        { error: `Unsupported weather market code: ${parsed.marketCode}` },
+        { error: `Unsupported weather market code: ${eventContext.marketCode}` },
         { status: 400 }
       );
     }
@@ -292,18 +396,27 @@ export async function POST(request: Request) {
         ? pointProperties.forecast
         : null;
 
-    const [forecast, observations, alerts, openMeteo] = await Promise.all([
-      forecastUrl ? getNwsForecastFromUrl(forecastUrl) : Promise.resolve(null),
-      getNwsStationObservations(config.nwsObservationStation),
-      getNwsAlerts(config.latitude, config.longitude),
-      getOpenMeteoForecast({
-        latitude: config.latitude,
-        longitude: config.longitude,
-        timezone: config.timezone,
-        startDate: parsed.eventDate,
-        endDate: parsed.eventDate,
-      }),
-    ]);
+    const hourlyForecastUrl =
+      typeof pointProperties?.forecastHourly === "string"
+        ? pointProperties.forecastHourly
+        : null;
+
+    const [forecast, hourlyForecast, observations, alerts, openMeteo] =
+      await Promise.all([
+        forecastUrl ? getNwsForecastFromUrl(forecastUrl) : Promise.resolve(null),
+        hourlyForecastUrl
+          ? getNwsForecastFromUrl(hourlyForecastUrl)
+          : Promise.resolve(null),
+        getNwsStationObservations(config.nwsObservationStation),
+        getNwsAlerts(config.latitude, config.longitude),
+        getOpenMeteoForecast({
+          latitude: config.latitude,
+          longitude: config.longitude,
+          timezone: config.timezone,
+          startDate: eventContext.eventDate,
+          endDate: eventContext.eventDate,
+        }),
+      ]);
 
     const aiReview = await runEventAiReview({
       apiKey: openAiCredentials.apiKey,
@@ -311,8 +424,11 @@ export async function POST(request: Request) {
         eventTicker,
         seriesTicker,
         eventContext: {
-          marketCode: parsed.marketCode,
-          eventDate: parsed.eventDate,
+          family: eventContext.family,
+          marketCode: eventContext.marketCode,
+          eventDate: eventContext.eventDate,
+          eventHourLocal: eventContext.eventHourLocal,
+          eventDateTimeLocalLabel: eventContext.eventDateTimeLocalLabel,
           location: config.displayName,
           timezone: config.timezone,
           latitude: config.latitude,
@@ -326,9 +442,10 @@ export async function POST(request: Request) {
         nws: {
           point,
           forecast,
+          hourlyForecast,
           observationsSummary: summarizeObservationsForEventDate(
             observations,
-            parsed.eventDate,
+            eventContext.eventDate,
             config.timezone
           ),
           alerts,

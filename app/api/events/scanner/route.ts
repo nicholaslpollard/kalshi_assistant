@@ -27,6 +27,13 @@ const HIGH_TEMP_SERIES = [
   "KXHIGHDEN",
 ];
 
+const HOURLY_TEMP_SERIES = [
+  // Experimental hourly temperature series. Verify through live Kalshi API output.
+  "KXTEMPNYCH",
+];
+
+const SCANNER_SERIES = [...HIGH_TEMP_SERIES, ...HOURLY_TEMP_SERIES];
+
 function toNumber(value: unknown) {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
@@ -203,7 +210,7 @@ export async function GET(request: Request) {
     const tomorrow = addDaysIsoDate(today, 1);
 
     const [seriesResults, positionsResult] = await Promise.all([
-      getKalshiEventsBySeriesList(HIGH_TEMP_SERIES, credentials),
+      getKalshiEventsBySeriesList(SCANNER_SERIES, credentials),
       getKalshiPositions(credentials),
     ]);
 
@@ -266,7 +273,7 @@ export async function GET(request: Request) {
       tomorrow,
       results,
       diagnostics: {
-        scannedSeries: HIGH_TEMP_SERIES,
+        scannedSeries: SCANNER_SERIES,
         eventCount: scanJobs.length,
         resultCount: results.length,
         filteredOutByScope: unfilteredResults.length - results.length,

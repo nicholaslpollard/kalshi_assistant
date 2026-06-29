@@ -10,12 +10,16 @@ export type EventScannerScope =
   | "tomorrow"
   | "all";
 
+export type EventScannerFamily = "daily_high" | "hourly_temperature";
+
 export type EventScannerWeatherRead = {
   heldOrFavoriteBucket: string | null;
   nwsBucket: string | null;
   openMeteoBucket: string | null;
   nwsTemperatureF: number | null;
   openMeteoTemperatureF: number | null;
+  hourlyTemperatureF: number | null;
+  hourlyThresholdCandidate: string | null;
   weatherAgreement: boolean;
 };
 
@@ -39,11 +43,14 @@ export type EventScannerMatchingPosition = {
 };
 
 export type EventScannerResult = {
+  family: EventScannerFamily;
   eventTicker: string;
   seriesTicker: string;
   marketCode: string | null;
   locationName: string | null;
   eventDate: string | null;
+  eventHourLocal: number | null;
+  eventDateTimeLocalLabel: string | null;
   title: string;
   signal: EventScannerSignal;
   score: number;

@@ -15,6 +15,8 @@ type EventScannerScope =
   | "tomorrow"
   | "all";
 
+type EventScannerFamily = "daily_high" | "hourly_temperature";
+
 type EventScannerMarket = {
   ticker: string;
   label: string;
@@ -65,11 +67,14 @@ type EventAiReview = {
 };
 
 type EventScannerResult = {
+  family: EventScannerFamily;
   eventTicker: string;
   seriesTicker: string;
   marketCode: string | null;
   locationName: string | null;
   eventDate: string | null;
+  eventHourLocal: number | null;
+  eventDateTimeLocalLabel: string | null;
   title: string;
   signal: EventScannerSignal;
   score: number;
@@ -85,6 +90,8 @@ type EventScannerResult = {
     openMeteoBucket: string | null;
     nwsTemperatureF: number | null;
     openMeteoTemperatureF: number | null;
+    hourlyTemperatureF: number | null;
+    hourlyThresholdCandidate: string | null;
     weatherAgreement: boolean;
   };
   matchingPosition: EventScannerMatchingPosition | null;
@@ -188,6 +195,23 @@ function signalLabel(signal: EventScannerSignal) {
     default:
       return signal;
   }
+}
+
+
+function familyLabel(family: EventScannerFamily) {
+  if (family === "hourly_temperature") {
+    return "Hourly temp";
+  }
+
+  return "Daily high";
+}
+
+function eventTimeLabel(event: EventScannerResult) {
+  if (event.eventDateTimeLocalLabel) {
+    return event.eventDateTimeLocalLabel;
+  }
+
+  return event.eventDate ?? "—";
 }
 
 function signalClass(signal: EventScannerSignal) {
@@ -565,6 +589,10 @@ function EventCard({
                 {event.seriesTicker}
               </span>
 
+              <span className="rounded-full border border-[#1f2a24] bg-[#0b120f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#a8b3ad]">
+                {familyLabel(event.family)}
+              </span>
+
               {event.matchingPosition ? (
                 <span className="rounded-full border border-[#38bdf8]/40 bg-[#38bdf8]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#bae6fd]">
                   You hold {event.matchingPosition.side.toUpperCase()}
@@ -574,7 +602,7 @@ function EventCard({
 
             <h2 className="mt-4 break-words text-2xl font-bold text-white">
               {event.locationName ?? event.marketCode ?? "Unknown location"}{" "}
-              {event.eventDate ? `· ${event.eventDate}` : ""}
+              · {eventTimeLabel(event)}
             </h2>
 
             <p className="mt-2 break-all font-mono text-xs text-[#6f7b74]">
@@ -592,16 +620,32 @@ function EventCard({
               value={event.marketFavorite?.label ?? "—"}
             />
             <MiniStat
-              label="Weather basket"
+              label={
+                event.family === "hourly_temperature"
+                  ? "Forecast threshold"
+                  : "Weather basket"
+              }
               value={event.weatherFavorite?.label ?? "—"}
             />
             <MiniStat
-              label="NWS bucket"
-              value={event.weather.nwsBucket ?? "—"}
+              label={event.family === "hourly_temperature" ? "NWS temp" : "NWS bucket"}
+              value={
+                event.family === "hourly_temperature"
+                  ? formatTemp(event.weather.nwsTemperatureF)
+                  : event.weather.nwsBucket ?? "—"
+              }
             />
             <MiniStat
-              label="Open-Meteo bucket"
-              value={event.weather.openMeteoBucket ?? "—"}
+              label={
+                event.family === "hourly_temperature"
+                  ? "Open-Meteo temp"
+                  : "Open-Meteo bucket"
+              }
+              value={
+                event.family === "hourly_temperature"
+                  ? formatTemp(event.weather.openMeteoTemperatureF)
+                  : event.weather.openMeteoBucket ?? "—"
+              }
             />
           </div>
         </div>
@@ -662,16 +706,32 @@ function EventCard({
               value={formatPercent(event.marketFavorite?.impliedProbability ?? null)}
             />
             <MiniStat
-              label="Weather favorite ask"
+              label={
+                event.family === "hourly_temperature"
+                  ? "Forecast threshold ask"
+                  : "Weather favorite ask"
+              }
               value={formatPrice(event.weatherFavorite?.yesAskEstimate ?? null)}
             />
             <MiniStat
-              label="NWS temp"
-              value={formatTemp(event.weather.nwsTemperatureF)}
+              label={event.family === "hourly_temperature" ? "Blended hourly temp" : "NWS temp"}
+              value={
+                event.family === "hourly_temperature"
+                  ? formatTemp(event.weather.hourlyTemperatureF)
+                  : formatTemp(event.weather.nwsTemperatureF)
+              }
             />
             <MiniStat
-              label="Open-Meteo temp"
-              value={formatTemp(event.weather.openMeteoTemperatureF)}
+              label={
+                event.family === "hourly_temperature"
+                  ? "Threshold candidate"
+                  : "Open-Meteo temp"
+              }
+              value={
+                event.family === "hourly_temperature"
+                  ? event.weather.hourlyThresholdCandidate ?? "—"
+                  : formatTemp(event.weather.openMeteoTemperatureF)
+              }
             />
           </div>
 
@@ -901,9 +961,10 @@ export function EventScannerClient() {
               Weather event scanner
             </h1>
             <p className="mt-3 max-w-4xl text-sm leading-6 text-[#a8b3ad]">
-              Scans active Kalshi high-temperature events and compares basket
-              pricing against NWS and Open-Meteo forecast buckets. This is
-              advisory-only and does not place trades.
+              Scans active Kalshi daily high-temperature and experimental hourly
+              temperature events, then compares market pricing against NWS and
+              Open-Meteo forecast data. This is advisory-only and does not place
+              trades.
             </p>
             <p className="mt-3 text-sm text-[#6f7b74]">
               Scope: {scopeLabel(scope)}
