@@ -159,6 +159,67 @@ function summarizeObservationsForEventDate(
   };
 }
 
+
+function getDailyBucketLabelFromTicker(ticker: string) {
+  const match = ticker.match(/-B(\d+(?:\.\d+)?)$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const midpoint = Number(match[1]);
+
+  if (!Number.isFinite(midpoint)) {
+    return null;
+  }
+
+  const lower = Math.floor(midpoint - 0.5);
+  const upper = lower + 1;
+
+  return `${lower}° to ${upper}°`;
+}
+
+function getMarketLabel(market: Record<string, unknown>) {
+  const descriptiveText = [
+    market.yes_sub_title,
+    market.subtitle,
+    market.title,
+  ].filter((value): value is string => typeof value === "string");
+
+  for (const text of descriptiveText) {
+    const match = text.match(/(\d+)\s*(?:°|degrees?)?\s*(?:to|-)\s*(\d+)/i);
+
+    if (match) {
+      return `${match[1]}° to ${match[2]}°`;
+    }
+  }
+
+  const ticker = typeof market.ticker === "string" ? market.ticker : null;
+  const tickerBucket = ticker ? getDailyBucketLabelFromTicker(ticker) : null;
+
+  if (tickerBucket) {
+    return tickerBucket;
+  }
+
+  const candidateText = ticker ? [...descriptiveText, ticker] : descriptiveText;
+
+  for (const text of candidateText) {
+    const aboveMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:°|degrees?)?\s*(?:or more|or above|above|\+)/i);
+
+    if (aboveMatch) {
+      return `${aboveMatch[1]}° or above`;
+    }
+
+    const belowMatch = text.match(/(?:under|below|less than|or below).*?(\d+(?:\.\d+)?)/i);
+
+    if (belowMatch) {
+      return `${belowMatch[1]}° or below`;
+    }
+  }
+
+  return candidateText[0] ?? "Unknown basket";
+}
+
 function normalizeKalshiMarket(market: Record<string, unknown>) {
   const noBid = toNumber(market.no_bid_dollars ?? market.no_bid);
   const yesBid = toNumber(market.yes_bid_dollars ?? market.yes_bid);
@@ -168,6 +229,7 @@ function normalizeKalshiMarket(market: Record<string, unknown>) {
     title: market.title ?? null,
     subtitle: market.subtitle ?? null,
     yesSubTitle: market.yes_sub_title ?? null,
+    label: getMarketLabel(market),
     status: market.status ?? null,
     yesBid,
     noBid,
@@ -435,6 +497,14 @@ export async function POST(request: Request) {
           longitude: config.longitude,
           nwsObservationStation: config.nwsObservationStation,
           settlementNote: config.settlementNote,
+          analysisMode:
+            eventContext.family === "hourly_temperature"
+              ? "hourly_temperature_forecast_threshold_review"
+              : "daily_high_forecast_bucket_review",
+          forecastGuidance:
+            eventContext.family === "daily_high"
+              ? "For tomorrow or future daily-high events, observations may be unavailable. Use NWS and Open-Meteo forecast highs as the primary evidence and evaluate which Kalshi range basket those forecasts support."
+              : "For hourly events, use NWS hourly forecast and Open-Meteo hourly forecast for the target local hour as the primary evidence.",
         },
         appCandidateBasket,
         kalshiEvent,

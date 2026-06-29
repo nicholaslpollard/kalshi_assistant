@@ -220,37 +220,64 @@ function pickNumber(market: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+function getDailyBucketLabelFromTicker(ticker: string) {
+  const match = ticker.match(/-B(\d+(?:\.\d+)?)$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const midpoint = Number(match[1]);
+
+  if (!Number.isFinite(midpoint)) {
+    return null;
+  }
+
+  const lower = Math.floor(midpoint - 0.5);
+  const upper = lower + 1;
+
+  return `${lower}° to ${upper}°`;
+}
+
 function getMarketLabel(market: Record<string, unknown>) {
-  const title =
-    typeof market.title === "string"
-      ? market.title
-      : typeof market.subtitle === "string"
-        ? market.subtitle
-        : typeof market.yes_sub_title === "string"
-          ? market.yes_sub_title
-          : typeof market.ticker === "string"
-            ? market.ticker
-            : "Unknown basket";
+  const descriptiveText = [
+    market.yes_sub_title,
+    market.subtitle,
+    market.title,
+  ].filter((value): value is string => typeof value === "string");
 
-  const match = title.match(/(\d+)\s*(?:°|degrees?)?\s*(?:to|-)\s*(\d+)/i);
+  for (const text of descriptiveText) {
+    const match = text.match(/(\d+)\s*(?:°|degrees?)?\s*(?:to|-)\s*(\d+)/i);
 
-  if (match) {
-    return `${match[1]}° to ${match[2]}°`;
+    if (match) {
+      return `${match[1]}° to ${match[2]}°`;
+    }
   }
 
-  const aboveMatch = title.match(/(\d+)\s*(?:°|degrees?)?\s*(?:or more|or above|above|\+)/i);
+  const ticker = typeof market.ticker === "string" ? market.ticker : null;
+  const tickerBucket = ticker ? getDailyBucketLabelFromTicker(ticker) : null;
 
-  if (aboveMatch) {
-    return `${aboveMatch[1]}° or above`;
+  if (tickerBucket) {
+    return tickerBucket;
   }
 
-  const belowMatch = title.match(/(?:under|below|less than|or below).*?(\d+)/i);
+  const candidateText = ticker ? [...descriptiveText, ticker] : descriptiveText;
 
-  if (belowMatch) {
-    return `${belowMatch[1]}° or below`;
+  for (const text of candidateText) {
+    const aboveMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:°|degrees?)?\s*(?:or more|or above|above|\+)/i);
+
+    if (aboveMatch) {
+      return `${aboveMatch[1]}° or above`;
+    }
+
+    const belowMatch = text.match(/(?:under|below|less than|or below).*?(\d+(?:\.\d+)?)/i);
+
+    if (belowMatch) {
+      return `${belowMatch[1]}° or below`;
+    }
   }
 
-  return title;
+  return candidateText[0] ?? "Unknown basket";
 }
 
 function normalizeMarket(market: Record<string, unknown>): EventScannerMarket {
@@ -459,16 +486,16 @@ function scoreDailyEvent(params: {
   }
 
   if (weatherAgreement && nwsBucket) {
-    score += 25;
-    reasons.push(`NWS and Open-Meteo agree on ${nwsBucket}.`);
+    score += 30;
+    reasons.push(`NWS and Open-Meteo agree on forecast bucket ${nwsBucket}.`);
   } else {
     risks.push("NWS and Open-Meteo do not fully agree.");
   }
 
   if (weatherFavorite) {
-    reasons.push(`Weather-supported basket: ${weatherFavorite.label}.`);
+    reasons.push(`Forecast-supported weather basket: ${weatherFavorite.label}.`);
   } else {
-    risks.push("The weather-supported bucket could not be matched to an event basket.");
+    risks.push("The forecast-supported bucket could not be matched to an event basket.");
   }
 
   reasons.push(`Market favorite: ${marketFavorite.label}.`);
@@ -479,7 +506,7 @@ function scoreDailyEvent(params: {
     weatherAgreement
   ) {
     score += 50;
-    reasons.push("Weather agrees on a basket that is not the market favorite.");
+    reasons.push("Forecast sources support a basket that is not the market favorite.");
   }
 
   if (
@@ -688,7 +715,9 @@ async function scanDailyHighEvent(
     Boolean(nwsBucket && openMeteoBucket && nwsBucket === openMeteoBucket);
 
   const marketFavorite = getMarketFavorite(markets);
+  const agreedForecastBucket = weatherAgreement ? nwsBucket : null;
   const weatherFavorite =
+    findMarketByBucket(markets, agreedForecastBucket) ??
     findMarketByBucket(markets, nwsBucket) ??
     findMarketByBucket(markets, openMeteoBucket);
 
@@ -719,12 +748,12 @@ async function scanDailyHighEvent(
     score: scored.score,
     summary:
       scored.signal === "POTENTIAL_ENTRY"
-        ? "Possible entry candidate based on weather-market disagreement."
+        ? "Forecast-supported entry candidate based on weather-market disagreement."
         : scored.signal === "WATCH_CLOSELY"
-          ? "Worth watching, but not a strong entry candidate yet."
+          ? "Forecast data supports a basket worth watching, but pricing may not be attractive enough yet."
           : scored.signal === "INSUFFICIENT_DATA"
-            ? "Insufficient data to score this event."
-            : "No clear event edge from the current read.",
+            ? "Insufficient forecast data to score this event."
+            : "No clear event edge from the current forecast read.",
     reasons: scored.reasons,
     risks: scored.risks,
     marketFavorite,

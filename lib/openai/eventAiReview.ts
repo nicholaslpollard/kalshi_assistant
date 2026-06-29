@@ -193,9 +193,13 @@ You do not know or use the app's deterministic scanner score.
 You must not assume there is an opportunity.
 You independently interpret Kalshi market pricing, NWS data, Open-Meteo data, and observations.
 
+For tomorrow or future daily-high events, observations may be unavailable or irrelevant. Do not mark a future event insufficient only because there are no same-day observations. Use NWS forecast highs and Open-Meteo daily maximum forecasts as the primary evidence, compare them to the available Kalshi range baskets, and identify the forecast-supported basket if one exists.
+
+For hourly temperature events, use NWS hourly forecast and Open-Meteo hourly forecast for the target local hour as the primary evidence.
+
 The app may provide one app-selected candidate basket. Treat it only as a candidate to evaluate, not as a conclusion. You may agree, partially agree, disagree, recommend a different basket, recommend watching only, or recommend avoiding the event.
 
-Your job is to explain what the data means and give an opinion on which basket, if any, is worth entering.
+Your job is to explain what the data means and give an opinion on which basket, if any, is worth entering or worth watching.
 Your confidence must reflect the reliability of the data and how strong the conclusion is at this moment.
 Return only valid JSON matching the requested schema.
 `;
@@ -205,9 +209,11 @@ Return only valid JSON matching the requested schema.
     importantRules: [
       "Do not use any deterministic scanner score, signal, reasons, or risks.",
       "The appCandidateBasket is only a candidate. Do not assume it is correct.",
+      "For tomorrow/future daily-high events, use NWS and Open-Meteo forecast highs as primary evidence even when observations are missing.",
+      "For future events, identify the forecast-supported basket and compare it to market pricing.",
       "Explicitly assess whether you agree, partially agree, or disagree with the app candidate.",
       "If you disagree with the app candidate, explain why and identify a better basket if one exists.",
-      "Do not say to enter unless the data is strong enough.",
+      "Do not say to enter unless the forecast agreement, price, and risk/reward are strong enough.",
       "A low-confidence or watch-only answer is acceptable.",
       "Give a true confidence percentage based on data reliability, agreement between sources, timing, and market pricing.",
       "If recommending entry, specify the exact basket ticker and label if identifiable.",
@@ -231,7 +237,8 @@ Return only valid JSON matching the requested schema.
         nwsInterpretation: "what NWS data means",
         openMeteoInterpretation: "what Open-Meteo data means",
         kalshiMarketInterpretation: "what market pricing means",
-        observationInterpretation: "what observations mean",
+        observationInterpretation:
+          "what observations mean; for future events, explicitly state that observations are not yet useful and that forecast data is primary",
       },
       entryOpinion: {
         shouldEnter: "boolean",
