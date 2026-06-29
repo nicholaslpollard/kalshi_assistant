@@ -8,6 +8,21 @@ export type PositionReviewAction =
   | "ROLL_TO_BETTER_BUCKET"
   | "NO_ACTION";
 
+export type PositionManualActionPlan = {
+  title: string;
+  summary: string;
+  urgency: "low" | "medium" | "high";
+  steps: string[];
+  priceGuidance: {
+    currentSellBid: number | null;
+    targetBuyAskEstimate: number | null;
+    maxReasonableTargetEntry: number | null;
+    minReasonableExit: number | null;
+  };
+  checksBeforeActing: string[];
+  afterActionChecks: string[];
+};
+
 export type PositionReviewResult = {
   action: PositionReviewAction;
   confidence: "low" | "medium" | "high";
@@ -40,6 +55,7 @@ export type PositionReviewResult = {
     yesBid: number | null;
     yesAskFromNoBid: number | null;
   } | null;
+  manualActionPlan: PositionManualActionPlan;
   aiReviewRequested: boolean;
   aiReviewNote: string | null;
 };

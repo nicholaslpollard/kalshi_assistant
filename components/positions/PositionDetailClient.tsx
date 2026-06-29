@@ -159,6 +159,20 @@ type PositionReview = {
     yesBid: number | null;
     yesAskFromNoBid: number | null;
   } | null;
+  manualActionPlan: {
+    title: string;
+    summary: string;
+    urgency: "low" | "medium" | "high";
+    steps: string[];
+    priceGuidance: {
+      currentSellBid: number | null;
+      targetBuyAskEstimate: number | null;
+      maxReasonableTargetEntry: number | null;
+      minReasonableExit: number | null;
+    };
+    checksBeforeActing: string[];
+    afterActionChecks: string[];
+  };
   aiReviewRequested: boolean;
   aiReviewNote: string | null;
 };
@@ -702,6 +716,87 @@ function PositionWeatherPanel({
 }
 
 
+function ManualActionPlanPanel({
+  plan,
+}: {
+  plan: PositionReview["manualActionPlan"];
+}) {
+  const urgencyClass =
+    plan.urgency === "high"
+      ? "border-[#ef4444]/40 bg-[#ef4444]/10 text-[#fecaca]"
+      : plan.urgency === "medium"
+        ? "border-[#facc15]/30 bg-[#facc15]/10 text-[#fde68a]"
+        : "border-[#22c55e]/30 bg-[#22c55e]/10 text-[#bbf7d0]";
+
+  return (
+    <div className={`mt-6 rounded-2xl border p-5 ${urgencyClass}`}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] opacity-80">
+            Manual action plan
+          </p>
+          <h4 className="mt-2 text-xl font-bold">{plan.title}</h4>
+          <p className="mt-3 text-sm leading-6">{plan.summary}</p>
+        </div>
+
+        <span className="rounded-full border border-current px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]">
+          {plan.urgency} urgency
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <DataCard
+          label="Current sell bid"
+          value={formatPrice(plan.priceGuidance.currentSellBid)}
+        />
+        <DataCard
+          label="Target ask est."
+          value={formatPrice(plan.priceGuidance.targetBuyAskEstimate)}
+        />
+        <DataCard
+          label="Max target entry"
+          value={formatPrice(plan.priceGuidance.maxReasonableTargetEntry)}
+        />
+        <DataCard
+          label="Min exit guide"
+          value={formatPrice(plan.priceGuidance.minReasonableExit)}
+        />
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h5 className="font-semibold text-white">Steps</h5>
+          <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+            {plan.steps.map((step, index) => (
+              <li key={step}>
+                {index + 1}. {step}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h5 className="font-semibold text-white">Check before acting</h5>
+          <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+            {plan.checksBeforeActing.map((check) => (
+              <li key={check}>• {check}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h5 className="font-semibold text-white">After action</h5>
+          <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+            {plan.afterActionChecks.map((check) => (
+              <li key={check}>• {check}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReviewResultPanel({ review }: { review: PositionReview }) {
   return (
     <div className="mt-6 space-y-4">
@@ -722,6 +817,8 @@ function ReviewResultPanel({ review }: { review: PositionReview }) {
           {review.summary}
         </p>
       </div>
+
+      <ManualActionPlanPanel plan={review.manualActionPlan} />
 
       <div className="grid gap-4 md:grid-cols-3">
         <DataCard

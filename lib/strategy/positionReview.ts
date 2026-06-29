@@ -97,6 +97,207 @@ function getHeldMarket(basketMarkets: ReviewBasketMarket[]) {
   return basketMarkets.find((market) => market.isHeld) ?? null;
 }
 
+function buildManualActionPlan(params: {
+  action: PositionReviewResult["action"];
+  position: ReviewPosition;
+  heldBucket: string | null;
+  rollCandidate: ReviewBasketMarket | null;
+}): PositionReviewResult["manualActionPlan"] {
+  const { action, position, heldBucket, rollCandidate } = params;
+
+  const currentSellBid = position.currentBidPrice;
+  const targetBuyAskEstimate = rollCandidate?.yesAskFromNoBid ?? null;
+
+  const maxReasonableTargetEntry =
+    targetBuyAskEstimate !== null
+      ? Math.min(0.99, targetBuyAskEstimate + 0.03)
+      : null;
+
+  const minReasonableExit =
+    currentSellBid !== null ? Math.max(0.01, currentSellBid - 0.03) : null;
+
+  if (action === "ROLL_TO_BETTER_BUCKET" && rollCandidate) {
+    return {
+      title: "Manual roll plan",
+      summary: `Consider manually rolling from ${heldBucket ?? position.ticker} into ${rollCandidate.label}, but only after confirming the live order book.`,
+      urgency: "medium",
+      steps: [
+        `Review the current order book for your held contract: ${position.ticker}.`,
+        `If the bid is still acceptable, consider selling your current ${position.side.toUpperCase()} position near the current bid.`,
+        `Review the target basket order book: ${rollCandidate.ticker}.`,
+        `Only consider buying the target basket if the ask is still near the estimated target entry range.`,
+        "After any manual trade, refresh positions and run the position review again.",
+      ],
+      priceGuidance: {
+        currentSellBid,
+        targetBuyAskEstimate,
+        maxReasonableTargetEntry,
+        minReasonableExit,
+      },
+      checksBeforeActing: [
+        "Confirm the Kalshi order book has not moved materially since this review loaded.",
+        "Confirm the NWS and Open-Meteo buckets still favor the target basket.",
+        "Confirm the observed floor has not changed if the event date is active.",
+        "Avoid rolling if the spread is wide enough that the switch gives up too much value.",
+      ],
+      afterActionChecks: [
+        "Refresh the position dashboard.",
+        "Confirm the old position is reduced or closed.",
+        "Confirm the new target position appears correctly.",
+        "Run Position Review again on the new position.",
+      ],
+    };
+  }
+
+  if (action === "HOLD_OR_TRIM_PROFIT") {
+    return {
+      title: "Manual hold-or-trim plan",
+      summary:
+        "Holding remains reasonable, but you may consider trimming part of the position if the bid gives you a useful profit or reduces risk.",
+      urgency: "low",
+      steps: [
+        "Review the current bid and exit value.",
+        "Decide whether you want to hold the full position or manually sell a portion to reduce risk.",
+        "If trimming, use a limit price near the current bid rather than accepting a poor spread.",
+        "After any trim, refresh positions and run the position review again.",
+      ],
+      priceGuidance: {
+        currentSellBid,
+        targetBuyAskEstimate: null,
+        maxReasonableTargetEntry: null,
+        minReasonableExit,
+      },
+      checksBeforeActing: [
+        "Confirm the held bucket is still supported by the latest weather read.",
+        "Confirm the remaining upside is worth the risk if you hold.",
+        "Check whether the bid is strong enough to justify trimming.",
+      ],
+      afterActionChecks: [
+        "Refresh the position dashboard.",
+        "Confirm the remaining contract count is correct.",
+        "Run Position Review again.",
+      ],
+    };
+  }
+
+  if (action === "CUT_LOSS" || action === "SELL_FULL_POSITION") {
+    return {
+      title: "Manual exit plan",
+      summary:
+        "Consider manually exiting the position if the weather read and market pricing no longer support the held bucket.",
+      urgency: "medium",
+      steps: [
+        `Review the current order book for ${position.ticker}.`,
+        "Confirm the current bid is still available.",
+        "If exiting, use a limit order near the current bid and avoid selling into an unusually poor spread.",
+        "After selling, refresh positions and confirm the position is closed or reduced.",
+      ],
+      priceGuidance: {
+        currentSellBid,
+        targetBuyAskEstimate: null,
+        maxReasonableTargetEntry: null,
+        minReasonableExit,
+      },
+      checksBeforeActing: [
+        "Confirm weather sources still point away from the held bucket.",
+        "Confirm there is enough liquidity to exit without excessive slippage.",
+        "Confirm you are comfortable giving up any remaining upside.",
+      ],
+      afterActionChecks: [
+        "Refresh the position dashboard.",
+        "Confirm the position is closed or reduced.",
+        "Review whether another basket is worth entering separately.",
+      ],
+    };
+  }
+
+  if (action === "SELL_TO_LOCK_PROFIT") {
+    return {
+      title: "Manual profit-lock plan",
+      summary:
+        "Consider manually selling to lock profit if the current bid gives you enough return compared with the remaining upside.",
+      urgency: "medium",
+      steps: [
+        "Review the current bid and sell-now value.",
+        "Compare the secured profit against the remaining upside if the contract settles correctly.",
+        "If locking profit, place a limit order near the current bid.",
+        "Refresh positions after the order fills or partially fills.",
+      ],
+      priceGuidance: {
+        currentSellBid,
+        targetBuyAskEstimate: null,
+        maxReasonableTargetEntry: null,
+        minReasonableExit,
+      },
+      checksBeforeActing: [
+        "Confirm the current bid is still available.",
+        "Confirm whether holding still has a strong weather edge.",
+        "Avoid selling if the spread widened and the bid is temporarily weak.",
+      ],
+      afterActionChecks: [
+        "Refresh the position dashboard.",
+        "Confirm realized and remaining exposure.",
+        "Run Position Review again if any contracts remain.",
+      ],
+    };
+  }
+
+  if (action === "HOLD") {
+    return {
+      title: "Manual hold plan",
+      summary:
+        "No immediate manual trade is suggested. Continue monitoring the weather read and market price.",
+      urgency: "low",
+      steps: [
+        "Do not place a trade based on the current deterministic review.",
+        "Monitor NWS, Open-Meteo, observed floor status, and the sibling basket table.",
+        "Refresh the position review when forecast or order-book conditions change.",
+      ],
+      priceGuidance: {
+        currentSellBid,
+        targetBuyAskEstimate: null,
+        maxReasonableTargetEntry: null,
+        minReasonableExit,
+      },
+      checksBeforeActing: [
+        "Watch for NWS or Open-Meteo moving away from the held bucket.",
+        "Watch for another basket becoming materially favored.",
+        "Watch the observed floor once the event date starts.",
+      ],
+      afterActionChecks: [
+        "No post-trade check is needed unless you manually act.",
+        "Re-run review after material forecast or price changes.",
+      ],
+    };
+  }
+
+  return {
+    title: "Manual watch plan",
+    summary:
+      "No clear manual action is suggested. The position should be monitored until the signal becomes stronger.",
+    urgency: "low",
+    steps: [
+      "Do not place a trade based only on the current mixed signal.",
+      "Refresh weather and Kalshi data periodically.",
+      "Run Position Review again after meaningful market or forecast movement.",
+    ],
+    priceGuidance: {
+      currentSellBid,
+      targetBuyAskEstimate: null,
+      maxReasonableTargetEntry: null,
+      minReasonableExit,
+    },
+    checksBeforeActing: [
+      "Wait for either stronger weather alignment or a better price opportunity.",
+      "Check whether the order book has enough liquidity.",
+      "Avoid acting on stale weather or stale bid/ask data.",
+    ],
+    afterActionChecks: [
+      "If you manually trade later, refresh positions and run review again.",
+    ],
+  };
+}
+
 export function runDeterministicPositionReview(
   input: RunPositionReviewInput
 ): PositionReviewResult {
@@ -292,6 +493,12 @@ export function runDeterministicPositionReview(
           yesAskFromNoBid: rollCandidate.yesAskFromNoBid,
         }
       : null,
+      manualActionPlan: buildManualActionPlan({
+        action,
+        position,
+        heldBucket,
+        rollCandidate,
+    }),
     aiReviewRequested,
     aiReviewNote: null,
   };
