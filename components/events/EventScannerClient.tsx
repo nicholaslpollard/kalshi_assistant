@@ -34,6 +34,36 @@ type EventScannerMatchingPosition = {
   positionFp: number | null;
 };
 
+type EventAiReview = {
+  action: "ENTER_YES" | "WATCH_ONLY" | "AVOID" | "INSUFFICIENT_DATA";
+  recommendedBasketTicker: string | null;
+  recommendedBasketLabel: string | null;
+  confidence: "low" | "medium" | "high";
+  trueConfidencePercent: number | null;
+  summary: string;
+  candidateAssessment: {
+    appCandidateTicker: string | null;
+    appCandidateLabel: string | null;
+    assessment: "agree" | "partially_agree" | "disagree" | "no_candidate";
+    assessmentReason: string;
+  };
+  dataRead: {
+    nwsInterpretation: string;
+    openMeteoInterpretation: string;
+    kalshiMarketInterpretation: string;
+    observationInterpretation: string;
+  };
+  entryOpinion: {
+    shouldEnter: boolean;
+    preferredMaxEntryPrice: number | null;
+    fairValueEstimate: number | null;
+    reasoning: string;
+  };
+  risks: string[];
+  whatWouldChangeMyMind: string[];
+  recommendedMonitoring: string[];
+};
+
 type EventScannerResult = {
   eventTicker: string;
   seriesTicker: string;
@@ -313,21 +343,201 @@ function MatchingPositionPanel({
           href={`/positions/${encodeURIComponent(matchingPosition.ticker)}`}
           className="rounded-xl bg-[#38bdf8] px-5 py-3 text-sm font-semibold text-[#021018] transition hover:bg-[#0ea5e9]"
         >
-          View position
+          View Position
         </a>
       </div>
     </div>
   );
 }
 
+
+function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
+  return (
+    <div className="space-y-5 rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
+            AI event review
+          </p>
+          <h3 className="mt-2 text-2xl font-bold text-[#bae6fd]">
+            {aiReview.action.replaceAll("_", " ")}
+          </h3>
+          <p className="mt-2 text-sm text-[#bae6fd]">
+            Confidence:{" "}
+            <span className="font-semibold text-white">
+              {aiReview.confidence.toUpperCase()}
+            </span>
+            {aiReview.trueConfidencePercent !== null ? (
+              <>
+                {" "}
+                · True confidence:{" "}
+                <span className="font-semibold text-white">
+                  {aiReview.trueConfidencePercent.toFixed(0)}%
+                </span>
+              </>
+            ) : null}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#021018]/60 p-4 lg:min-w-[280px]">
+          <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
+            Recommended basket
+          </p>
+          <p className="mt-2 font-semibold text-white">
+            {aiReview.recommendedBasketLabel ?? "No basket recommended"}
+          </p>
+          {aiReview.recommendedBasketTicker ? (
+            <p className="mt-1 break-all font-mono text-xs text-[#7dd3fc]">
+              {aiReview.recommendedBasketTicker}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <p className="text-sm leading-6 text-[#f4f7f5]">{aiReview.summary}</p>
+
+      <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5">
+        <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
+          AI assessment of app candidate
+        </p>
+
+        <h4 className="mt-2 text-lg font-bold text-white">
+          {aiReview.candidateAssessment.appCandidateLabel ?? "No app candidate"}
+        </h4>
+
+        <p className="mt-2 font-mono text-xs text-[#7dd3fc]">
+          {aiReview.candidateAssessment.appCandidateTicker ?? "—"}
+        </p>
+
+        <p className="mt-3 text-sm text-[#bae6fd]">
+          Assessment:{" "}
+          <span className="font-semibold text-white">
+            {aiReview.candidateAssessment.assessment.replace("_", " ")}
+          </span>
+        </p>
+
+        <p className="mt-3 text-sm leading-6 text-[#bae6fd]">
+          {aiReview.candidateAssessment.assessmentReason}
+        </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MiniStat
+          label="Should enter"
+          value={aiReview.entryOpinion.shouldEnter ? "Yes" : "No"}
+        />
+        <MiniStat
+          label="Max entry"
+          value={formatPrice(aiReview.entryOpinion.preferredMaxEntryPrice)}
+        />
+        <MiniStat
+          label="Fair value"
+          value={formatPrice(aiReview.entryOpinion.fairValueEstimate)}
+        />
+      </div>
+
+      <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <h4 className="font-semibold text-white">Entry reasoning</h4>
+        <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+          {aiReview.entryOpinion.reasoning}
+        </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">NWS read</h4>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.dataRead.nwsInterpretation}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Open-Meteo read</h4>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.dataRead.openMeteoInterpretation}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Kalshi market read</h4>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.dataRead.kalshiMarketInterpretation}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Observation read</h4>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.dataRead.observationInterpretation}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Risks</h4>
+          {aiReview.risks.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+              {aiReview.risks.map((risk) => (
+                <li key={risk}>• {risk}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-[#a8b3ad]">No risks returned.</p>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">What would change the view</h4>
+          {aiReview.whatWouldChangeMyMind.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+              {aiReview.whatWouldChangeMyMind.map((item) => (
+                <li key={item}>• {item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-[#a8b3ad]">
+              No change conditions returned.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Recommended monitoring</h4>
+          {aiReview.recommendedMonitoring.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+              {aiReview.recommendedMonitoring.map((item) => (
+                <li key={item}>• {item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-[#a8b3ad]">
+              No monitoring items returned.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function EventCard({
   event,
   expanded,
   onToggle,
+  aiReview,
+  loadingAiReview,
+  aiReviewError,
+  onRunAiReview,
 }: {
   event: EventScannerResult;
   expanded: boolean;
   onToggle: () => void;
+  aiReview: EventAiReview | null;
+  loadingAiReview: boolean;
+  aiReviewError: string;
+  onRunAiReview: () => void;
 }) {
   return (
     <article className="rounded-3xl border border-[#1f2a24] bg-[#101714]">
@@ -411,6 +621,41 @@ function EventCard({
             <MatchingPositionPanel matchingPosition={event.matchingPosition} />
           ) : null}
 
+          <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
+                  AI review
+                </p>
+                <h3 className="mt-2 font-semibold text-white">
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-[#bae6fd]">
+                  This sends fresh Kalshi, NWS, observation, and Open-Meteo data
+                  for this event. It also sends the app-selected candidate basket
+                  for AI assessment, but does not send the scanner score, signal,
+                  reasons, or risks.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={onRunAiReview}
+                disabled={loadingAiReview}
+                className="rounded-xl bg-[#38bdf8] px-5 py-3 text-sm font-semibold text-[#021018] transition hover:bg-[#0ea5e9] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loadingAiReview ? "Running AI review..." : "AI Review"}
+              </button>
+            </div>
+
+            {aiReviewError ? (
+              <div className="mt-5 rounded-2xl border border-[#ef4444]/40 bg-[#ef4444]/10 p-4 text-sm text-[#fecaca]">
+                {aiReviewError}
+              </div>
+            ) : null}
+          </div>
+
+          {aiReview ? <AiReviewResultPanel aiReview={aiReview} /> : null}
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MiniStat
               label="Market favorite implied"
@@ -482,6 +727,11 @@ export function EventScannerClient() {
   const [signalFilter, setSignalFilter] = useState<"ALL" | EventScannerSignal>(
     "ALL"
   );
+  const [aiReviews, setAiReviews] = useState<Record<string, EventAiReview>>({});
+  const [loadingAiReviews, setLoadingAiReviews] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [aiReviewErrors, setAiReviewErrors] = useState<Record<string, string>>({});
   const [scope, setScope] = useState<EventScannerScope>("today_tomorrow");
 
   async function loadScanner(activeScope = scope) {
@@ -520,6 +770,69 @@ export function EventScannerClient() {
       setError(message);
     } finally {
       setLoading(false);
+    }
+  }
+
+
+  async function runEventAiReview(event: EventScannerResult) {
+    setLoadingAiReviews((current) => ({
+      ...current,
+      [event.eventTicker]: true,
+    }));
+    setAiReviewErrors((current) => ({
+      ...current,
+      [event.eventTicker]: "",
+    }));
+
+    try {
+      const user = firebaseAuth.currentUser;
+
+      if (!user) {
+        throw new Error("You must be signed in.");
+      }
+
+      const idToken = await user.getIdToken();
+
+      const response = await fetch("/api/events/scanner/ai-review", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          eventTicker: event.eventTicker,
+          seriesTicker: event.seriesTicker,
+          appCandidateBasket: event.weatherFavorite,
+        }),
+      });
+
+      const body = await response.json();
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to run AI review.");
+      }
+
+      setAiReviews((current) => ({
+        ...current,
+        [event.eventTicker]: body.aiReview,
+      }));
+    } catch (err) {
+      console.error(err);
+
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to run AI review.";
+
+      setAiReviewErrors((current) => ({
+        ...current,
+        [event.eventTicker]: message,
+      }));
+    } finally {
+      setLoadingAiReviews((current) => ({
+        ...current,
+        [event.eventTicker]: false,
+      }));
     }
   }
 
@@ -738,6 +1051,10 @@ export function EventScannerClient() {
             event={event}
             expanded={Boolean(expandedTickers[event.eventTicker])}
             onToggle={() => toggleExpanded(event.eventTicker)}
+            aiReview={aiReviews[event.eventTicker] ?? null}
+            loadingAiReview={Boolean(loadingAiReviews[event.eventTicker])}
+            aiReviewError={aiReviewErrors[event.eventTicker] ?? ""}
+            onRunAiReview={() => void runEventAiReview(event)}
           />
         ))}
       </section>

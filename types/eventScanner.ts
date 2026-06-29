@@ -74,3 +74,41 @@ export type EventScannerResponse = {
     errors: string[];
   };
 };
+
+export type EventAiReviewAction =
+  | "ENTER_YES"
+  | "WATCH_ONLY"
+  | "AVOID"
+  | "INSUFFICIENT_DATA";
+
+export type EventAiCandidateAssessment = {
+  appCandidateTicker: string | null;
+  appCandidateLabel: string | null;
+  assessment: "agree" | "partially_agree" | "disagree" | "no_candidate";
+  assessmentReason: string;
+};
+
+export type EventAiReviewResult = {
+  action: EventAiReviewAction;
+  recommendedBasketTicker: string | null;
+  recommendedBasketLabel: string | null;
+  confidence: "low" | "medium" | "high";
+  trueConfidencePercent: number | null;
+  summary: string;
+  candidateAssessment: EventAiCandidateAssessment;
+  dataRead: {
+    nwsInterpretation: string;
+    openMeteoInterpretation: string;
+    kalshiMarketInterpretation: string;
+    observationInterpretation: string;
+  };
+  entryOpinion: {
+    shouldEnter: boolean;
+    preferredMaxEntryPrice: number | null;
+    fairValueEstimate: number | null;
+    reasoning: string;
+  };
+  risks: string[];
+  whatWouldChangeMyMind: string[];
+  recommendedMonitoring: string[];
+};
