@@ -75,6 +75,17 @@ function SummaryItem({
   );
 }
 
+function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+    >
+      {children}
+    </Link>
+  );
+}
+
 export function AppNav() {
   const { user, logout } = useAuth();
 
@@ -124,7 +135,7 @@ export function AppNav() {
                 Kalshi Assistant
               </p>
               <p className="mt-1 text-xl font-bold text-white">
-                Weather Opportunity Dashboard
+                Weather Event Dashboard
               </p>
             </Link>
 
@@ -134,33 +145,11 @@ export function AppNav() {
           </div>
 
           <nav className="flex flex-wrap gap-2">
-            <Link
-              href="/"
-              className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-            >
-              Home
-            </Link>
-
-            <Link
-              href="/dashboard"
-              className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-            >
-              Dashboard
-            </Link>
-
-            <Link
-              href="/positions"
-              className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-            >
-              Positions
-            </Link>
-
-            <Link
-              href="/settings/credentials"
-              className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-            >
-              Credentials
-            </Link>
+            <NavLink href="/">Home</NavLink>
+            <NavLink href="/dashboard">Dashboard</NavLink>
+            <NavLink href="/positions">Positions</NavLink>
+            <NavLink href="/events">Event Scanner</NavLink>
+            <NavLink href="/settings/credentials">Credentials</NavLink>
 
             <button
               type="button"

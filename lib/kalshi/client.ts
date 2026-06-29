@@ -147,6 +147,40 @@ export async function getKalshiEventWithMarkets(
   );
 }
 
+export async function getKalshiEventsBySeries(
+  seriesTicker: string,
+  credentials: KalshiClientCredentials
+) {
+  return kalshiGet<KalshiEventsResponse>(
+    `/trade-api/v2/events?series_ticker=${encodeURIComponent(
+      seriesTicker
+    )}&status=open&with_nested_markets=true`,
+    credentials
+  );
+}
+
+export async function getKalshiEventsBySeriesList(
+  seriesTickers: string[],
+  credentials: KalshiClientCredentials
+) {
+  const uniqueSeriesTickers = Array.from(
+    new Set(seriesTickers.map((ticker) => ticker.trim()).filter(Boolean))
+  );
+
+  const results = await Promise.all(
+    uniqueSeriesTickers.map(async (seriesTicker) => {
+      const result = await getKalshiEventsBySeries(seriesTicker, credentials);
+
+      return {
+        seriesTicker,
+        result,
+      };
+    })
+  );
+
+  return results;
+}
+
 export type KalshiLegacyOrderbookLevel = [number, number];
 export type KalshiFixedPointOrderbookLevel = [string, string];
 
