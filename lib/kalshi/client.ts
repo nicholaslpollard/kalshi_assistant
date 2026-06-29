@@ -96,6 +96,57 @@ export async function getKalshiPositions(credentials: KalshiClientCredentials) {
   );
 }
 
+export type KalshiMarketResponse = {
+  market?: Record<string, unknown>;
+};
+
+export async function getKalshiMarket(
+  ticker: string,
+  credentials: KalshiClientCredentials
+) {
+  return kalshiGet<KalshiMarketResponse>(
+    `/trade-api/v2/markets/${encodeURIComponent(ticker)}`,
+    credentials
+  );
+}
+
+export type KalshiEvent = Record<string, unknown> & {
+  markets?: Record<string, unknown>[];
+};
+
+export type KalshiSingleEventResponse = {
+  event?: KalshiEvent;
+};
+
+export type KalshiEventsResponse = {
+  events?: KalshiEvent[];
+  cursor?: string;
+};
+
+export async function getKalshiEvent(
+  eventTicker: string,
+  credentials: KalshiClientCredentials
+) {
+  return kalshiGet<KalshiSingleEventResponse>(
+    `/trade-api/v2/events/${encodeURIComponent(
+      eventTicker
+    )}?with_nested_markets=true`,
+    credentials
+  );
+}
+
+export async function getKalshiEventWithMarkets(
+  eventTicker: string,
+  credentials: KalshiClientCredentials
+) {
+  return kalshiGet<KalshiEventsResponse>(
+    `/trade-api/v2/events?tickers=${encodeURIComponent(
+      eventTicker
+    )}&with_nested_markets=true`,
+    credentials
+  );
+}
+
 export type KalshiLegacyOrderbookLevel = [number, number];
 export type KalshiFixedPointOrderbookLevel = [string, string];
 

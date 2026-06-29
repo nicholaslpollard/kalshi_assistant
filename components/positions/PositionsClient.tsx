@@ -46,7 +46,7 @@ function formatNumber(value: number | null, digits = 2) {
 
 function formatContractPrice(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
-    return "No bid";
+    return "—";
   }
 
   return value.toLocaleString(undefined, {
@@ -110,6 +110,91 @@ function SideBadge({ side }: { side: NormalizedPosition["side"] }) {
     <span className="rounded-full border border-[#6f7b74]/40 bg-[#0b120f] px-3 py-1 text-xs font-semibold text-[#a8b3ad]">
       {label}
     </span>
+  );
+}
+
+function InlineMetric({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="min-w-[110px]">
+      <p className="text-[11px] uppercase tracking-[0.16em] text-[#6f7b74]">
+        {label}
+      </p>
+      <p className={valueClassName ?? "mt-1 text-sm font-semibold text-white"}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function PositionCard({ position }: { position: NormalizedPosition }) {
+  const detailHref = `/positions/${encodeURIComponent(position.ticker)}`;
+
+  return (
+    <Link
+      href={detailHref}
+      className="group block rounded-2xl border border-[#1f2a24] bg-[#101714] p-4 transition hover:border-[#22c55e]/70 hover:bg-[#111c17]"
+    >
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <SideBadge side={position.side} />
+
+            <span className="rounded-full border border-[#1f2a24] bg-[#0b120f] px-3 py-1 text-xs font-semibold text-[#a8b3ad]">
+              Owned: {formatNumber(position.contractCount)} contracts
+            </span>
+
+            <span className="text-xs text-[#6f7b74]">
+              Updated {formatDate(position.lastUpdatedTs)}
+            </span>
+          </div>
+
+          <h2 className="mt-3 break-all font-mono text-base font-bold text-white">
+            {position.ticker}
+          </h2>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:flex xl:items-center">
+          <InlineMetric
+            label="Entry"
+            value={formatContractPrice(position.estimatedEntryPrice)}
+          />
+
+          <InlineMetric
+            label="Bid"
+            value={
+              position.hasCurrentBid
+                ? formatContractPrice(position.currentBidPrice)
+                : "No bid"
+            }
+          />
+
+          <InlineMetric
+            label="Exit value"
+            value={formatDollars(position.currentExitValueDollars)}
+          />
+
+          <InlineMetric
+            label="Unrealized"
+            value={formatDollars(position.unrealizedPnlAfterFeesDollars)}
+            valueClassName={`mt-1 text-sm font-semibold ${getPnlClass(
+              position.unrealizedPnlAfterFeesDollars
+            )}`}
+          />
+
+          <div className="rounded-xl border border-[#1f2a24] px-4 py-2 text-center text-sm font-semibold text-[#a8b3ad] transition group-hover:border-[#22c55e] group-hover:text-[#22c55e]">
+            Open detail →
+          </div>
+        </div>
+      </div>
+    </Link>
   );
 }
 
@@ -181,8 +266,9 @@ export function PositionsClient() {
               Open Kalshi positions
             </h1>
             <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
-              Read-only import of your current open Kalshi positions using your
-              encrypted saved credentials.
+              Click a position card to open the full command center for that
+              market, including Kalshi data, weather data, sell-vs-hold math,
+              and position review.
             </p>
           </div>
 
@@ -194,21 +280,6 @@ export function PositionsClient() {
           >
             {loading ? "Refreshing..." : "Refresh positions"}
           </button>
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link
-            href="/dashboard"
-            className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-          >
-            Dashboard
-          </Link>
-          <Link
-            href="/settings/credentials"
-            className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-          >
-            Credentials
-          </Link>
         </div>
       </section>
 
@@ -230,106 +301,18 @@ export function PositionsClient() {
       ) : null}
 
       {positions.length > 0 ? (
-        <section className="overflow-hidden rounded-3xl border border-[#1f2a24] bg-[#101714]">
-          <div className="border-b border-[#1f2a24] p-5">
+        <section className="space-y-4">
+          <div className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-5">
             <p className="text-sm text-[#a8b3ad]">
               Showing {positions.length} open position
               {positions.length === 1 ? "" : "s"}.
             </p>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1150px] border-collapse text-left text-sm">
-              <thead className="bg-[#0b120f] text-[#a8b3ad]">
-                <tr>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Ticker
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Side
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Contracts
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Entry
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Current bid
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Exposure
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Exit value
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Fees
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Unrealized P/L
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Total P/L
-                  </th>
-                  <th className="border-b border-[#1f2a24] px-4 py-3 font-semibold">
-                    Updated
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((position) => (
-                  <tr
-                    key={position.ticker}
-                    className="border-b border-[#1f2a24] last:border-b-0"
-                  >
-                    <td className="px-4 py-4 font-mono text-xs text-white">
-                      {position.ticker}
-                    </td>
-                    <td className="px-4 py-4">
-                      <SideBadge side={position.side} />
-                    </td>
-                    <td className="px-4 py-4 text-[#f4f7f5]">
-                      {formatNumber(position.contractCount)}
-                    </td>
-                    <td className="px-4 py-4 text-[#f4f7f5]">
-                      {formatContractPrice(position.estimatedEntryPrice)}
-                    </td>
-                    <td className="px-4 py-4 text-[#f4f7f5]">
-                      {position.hasCurrentBid
-                        ? formatContractPrice(position.currentBidPrice)
-                        : "No bid"}
-                    </td>
-                    <td className="px-4 py-4 text-[#f4f7f5]">
-                      {formatDollars(position.marketExposureDollars)}
-                    </td>
-                    <td className="px-4 py-4 text-[#f4f7f5]">
-                      {formatDollars(position.currentExitValueDollars)}
-                    </td>
-                    <td className="px-4 py-4 text-[#f4f7f5]">
-                      {formatDollars(position.feesPaidDollars)}
-                    </td>
-                    <td
-                      className={`px-4 py-4 font-semibold ${getPnlClass(
-                        position.unrealizedPnlAfterFeesDollars
-                      )}`}
-                    >
-                      {formatDollars(position.unrealizedPnlAfterFeesDollars)}
-                    </td>
-                    <td
-                      className={`px-4 py-4 font-semibold ${getPnlClass(
-                        position.totalPnlDollars
-                      )}`}
-                    >
-                      {formatDollars(position.totalPnlDollars)}
-                    </td>
-                    <td className="px-4 py-4 text-[#a8b3ad]">
-                      {formatDate(position.lastUpdatedTs)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="grid gap-3">
+            {positions.map((position) => (
+              <PositionCard key={position.ticker} position={position} />
+            ))}
           </div>
         </section>
       ) : null}
