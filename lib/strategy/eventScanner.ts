@@ -480,67 +480,96 @@ function scoreDailyEvent(params: {
     return {
       score: 0,
       signal: "INSUFFICIENT_DATA" as EventScannerSignal,
-      reasons: ["No usable weather bucket was found from NWS or Open-Meteo."],
-      risks: ["Weather data may be unavailable for this event date."],
+      reasons: ["No usable forecast bucket was found from NWS or Open-Meteo."],
+      risks: ["Forecast data may be unavailable for this event date."],
     };
   }
 
   if (weatherAgreement && nwsBucket) {
-    score += 30;
+    score += 35;
     reasons.push(`NWS and Open-Meteo agree on forecast bucket ${nwsBucket}.`);
-  } else {
-    risks.push("NWS and Open-Meteo do not fully agree.");
+  } else if (nwsBucket || openMeteoBucket) {
+    score += 10;
+    risks.push(
+      `NWS and Open-Meteo do not fully agree. NWS: ${
+        nwsBucket ?? "unavailable"
+      }, Open-Meteo: ${openMeteoBucket ?? "unavailable"}.`
+    );
   }
 
   if (weatherFavorite) {
     reasons.push(`Forecast-supported weather basket: ${weatherFavorite.label}.`);
   } else {
-    risks.push("The forecast-supported bucket could not be matched to an event basket.");
+    risks.push(
+      "The forecast-supported bucket could not be matched to an open Kalshi basket."
+    );
   }
 
   reasons.push(`Market favorite: ${marketFavorite.label}.`);
 
-  if (
-    weatherFavorite &&
-    weatherFavorite.ticker !== marketFavorite.ticker &&
-    weatherAgreement
-  ) {
-    score += 50;
-    reasons.push("Forecast sources support a basket that is not the market favorite.");
+  const forecastDiffersFromMarket =
+    Boolean(weatherFavorite) && weatherFavorite?.ticker !== marketFavorite.ticker;
+
+  if (weatherAgreement && weatherFavorite && forecastDiffersFromMarket) {
+    score += 30;
+    reasons.push(
+      "Forecast sources support a basket that is different from the current market favorite."
+    );
   }
 
   if (
     weatherFavorite &&
-    weatherFavorite.ticker !== marketFavorite.ticker &&
+    forecastDiffersFromMarket &&
     weatherFavorite.impliedProbability !== null &&
     marketFavorite.impliedProbability !== null
   ) {
     const gap = marketFavorite.impliedProbability - weatherFavorite.impliedProbability;
 
-    if (gap >= 0.1) {
+    if (gap >= 0.2) {
       score += 25;
       reasons.push(
-        `Weather basket is priced ${(gap * 100).toFixed(
+        `Forecast-supported basket is priced ${(gap * 100).toFixed(
           1
         )} percentage points below the market favorite.`
+      );
+    } else if (gap >= 0.1) {
+      score += 15;
+      reasons.push(
+        `Forecast-supported basket is priced ${(gap * 100).toFixed(
+          1
+        )} percentage points below the market favorite.`
+      );
+    } else if (gap > 0) {
+      score += 5;
+      reasons.push(
+        `Forecast-supported basket is slightly cheaper than the market favorite.`
       );
     }
   }
 
   if (weatherFavorite && weatherFavorite.yesAskEstimate === null) {
-    risks.push("Weather-supported basket does not have a usable YES ask estimate.");
+    risks.push(
+      "Forecast-supported basket does not have a usable YES ask estimate."
+    );
   }
 
   if (weatherFavorite && weatherFavorite.yesAskEstimate !== null) {
-    if (weatherFavorite.yesAskEstimate <= 0.45) {
+    if (weatherFavorite.yesAskEstimate <= 0.35) {
+      score += 20;
+      reasons.push(
+        "Forecast-supported basket has an estimated YES ask at or below $0.35."
+      );
+    } else if (weatherFavorite.yesAskEstimate <= 0.5) {
       score += 10;
-      reasons.push("Weather-supported basket has an estimated YES ask at or below $0.45.");
+      reasons.push(
+        "Forecast-supported basket has an estimated YES ask at or below $0.50."
+      );
     } else if (weatherFavorite.yesAskEstimate >= 0.75) {
-      risks.push("Weather-supported basket may already be expensive.");
+      risks.push("Forecast-supported basket may already be expensive.");
     }
   }
 
-  if (score >= 70) {
+  if (score >= 75) {
     signal = "POTENTIAL_ENTRY";
   } else if (score >= 35) {
     signal = "WATCH_CLOSELY";
