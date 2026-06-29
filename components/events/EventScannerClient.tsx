@@ -9,6 +9,12 @@ type EventScannerSignal =
   | "NO_CLEAR_EDGE"
   | "INSUFFICIENT_DATA";
 
+type EventScannerScope =
+  | "today_tomorrow"
+  | "today"
+  | "tomorrow"
+  | "all";
+
 type EventScannerMarket = {
   ticker: string;
   label: string;
@@ -19,6 +25,13 @@ type EventScannerMarket = {
   volume: number | null;
   openInterest: number | null;
   status: string | null;
+};
+
+type EventScannerMatchingPosition = {
+  ticker: string;
+  side: "yes" | "no" | "flat" | "unknown";
+  contractCount: number | null;
+  positionFp: number | null;
 };
 
 type EventScannerResult = {
@@ -44,16 +57,22 @@ type EventScannerResult = {
     openMeteoTemperatureF: number | null;
     weatherAgreement: boolean;
   };
+  matchingPosition: EventScannerMatchingPosition | null;
 };
 
 type EventScannerResponse = {
   ok: boolean;
   generatedAt: string;
+  scope: EventScannerScope;
+  today: string;
+  tomorrow: string;
   results: EventScannerResult[];
   diagnostics: {
     scannedSeries: string[];
     eventCount: number;
     resultCount: number;
+    filteredOutByScope: number;
+    matchingPositionCount: number;
     errors: string[];
   };
 };
@@ -111,6 +130,21 @@ function formatDateTime(value: string | null) {
   return date.toLocaleString();
 }
 
+function scopeLabel(scope: EventScannerScope) {
+  switch (scope) {
+    case "today_tomorrow":
+      return "Today + tomorrow";
+    case "today":
+      return "Today";
+    case "tomorrow":
+      return "Tomorrow";
+    case "all":
+      return "All open";
+    default:
+      return scope;
+  }
+}
+
 function signalLabel(signal: EventScannerSignal) {
   switch (signal) {
     case "POTENTIAL_ENTRY":
@@ -155,6 +189,32 @@ function MiniStat({
       </p>
       <p className="mt-2 text-lg font-bold text-white">{value}</p>
     </div>
+  );
+}
+
+function ScopeButton({
+  value,
+  label,
+  activeScope,
+  onClick,
+}: {
+  value: EventScannerScope;
+  label: string;
+  activeScope: EventScannerScope;
+  onClick: (value: EventScannerScope) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(value)}
+      className={
+        activeScope === value
+          ? "rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008]"
+          : "rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+      }
+    >
+      {label}
+    </button>
   );
 }
 
@@ -228,6 +288,38 @@ function MarketTable({ markets }: { markets: EventScannerMarket[] }) {
   );
 }
 
+function MatchingPositionPanel({
+  matchingPosition,
+}: {
+  matchingPosition: EventScannerMatchingPosition;
+}) {
+  return (
+    <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
+            Matching open position
+          </p>
+          <h3 className="mt-2 break-all font-mono text-sm font-semibold text-white">
+            {matchingPosition.ticker}
+          </h3>
+          <p className="mt-2 text-sm text-[#bae6fd]">
+            Side: {matchingPosition.side.toUpperCase()} · Contracts:{" "}
+            {formatNumber(matchingPosition.contractCount, 2)}
+          </p>
+        </div>
+
+        <a
+          href={`/positions/${encodeURIComponent(matchingPosition.ticker)}`}
+          className="rounded-xl bg-[#38bdf8] px-5 py-3 text-sm font-semibold text-[#021018] transition hover:bg-[#0ea5e9]"
+        >
+          View position
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function EventCard({
   event,
   expanded,
@@ -262,6 +354,12 @@ function EventCard({
               <span className="rounded-full border border-[#1f2a24] bg-[#0b120f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#a8b3ad]">
                 {event.seriesTicker}
               </span>
+
+              {event.matchingPosition ? (
+                <span className="rounded-full border border-[#38bdf8]/40 bg-[#38bdf8]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#bae6fd]">
+                  You hold {event.matchingPosition.side.toUpperCase()}
+                </span>
+              ) : null}
             </div>
 
             <h2 className="mt-4 break-words text-2xl font-bold text-white">
@@ -309,6 +407,10 @@ function EventCard({
 
       {expanded ? (
         <div className="space-y-5 border-t border-[#1f2a24] p-5">
+          {event.matchingPosition ? (
+            <MatchingPositionPanel matchingPosition={event.matchingPosition} />
+          ) : null}
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MiniStat
               label="Market favorite implied"
@@ -380,8 +482,9 @@ export function EventScannerClient() {
   const [signalFilter, setSignalFilter] = useState<"ALL" | EventScannerSignal>(
     "ALL"
   );
+  const [scope, setScope] = useState<EventScannerScope>("today_tomorrow");
 
-  async function loadScanner() {
+  async function loadScanner(activeScope = scope) {
     setLoading(true);
     setError("");
 
@@ -394,7 +497,7 @@ export function EventScannerClient() {
 
       const idToken = await user.getIdToken();
 
-      const response = await fetch("/api/events/scanner", {
+      const response = await fetch(`/api/events/scanner?scope=${activeScope}`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${idToken}`,
@@ -421,8 +524,8 @@ export function EventScannerClient() {
   }
 
   useEffect(() => {
-    void loadScanner();
-  }, []);
+    void loadScanner(scope);
+  }, [scope]);
 
   const filteredResults = useMemo(() => {
     const results = data?.results ?? [];
@@ -448,6 +551,7 @@ export function EventScannerClient() {
       insufficientData: results.filter(
         (item) => item.signal === "INSUFFICIENT_DATA"
       ).length,
+      heldMatches: results.filter((item) => item.matchingPosition !== null).length,
     };
   }, [data]);
 
@@ -488,11 +592,15 @@ export function EventScannerClient() {
               pricing against NWS and Open-Meteo forecast buckets. This is
               advisory-only and does not place trades.
             </p>
+            <p className="mt-3 text-sm text-[#6f7b74]">
+              Scope: {scopeLabel(scope)}
+              {data ? ` · API returned ${scopeLabel(data.scope)}` : ""}
+            </p>
           </div>
 
           <button
             type="button"
-            onClick={() => void loadScanner()}
+            onClick={() => void loadScanner(scope)}
             disabled={loading}
             className="rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a] disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -507,7 +615,7 @@ export function EventScannerClient() {
         </section>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <MiniStat label="Scanned events" value={formatNumber(counts.all)} />
         <MiniStat
           label="Potential entries"
@@ -515,6 +623,7 @@ export function EventScannerClient() {
         />
         <MiniStat label="Watch closely" value={formatNumber(counts.watchClosely)} />
         <MiniStat label="No clear edge" value={formatNumber(counts.noClearEdge)} />
+        <MiniStat label="Held matches" value={formatNumber(counts.heldMatches)} />
         <MiniStat
           label="Generated"
           value={data ? formatDateTime(data.generatedAt) : loading ? "Scanning" : "—"}
@@ -522,48 +631,90 @@ export function EventScannerClient() {
       </section>
 
       <section className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ["ALL", `All (${counts.all})`],
-                ["POTENTIAL_ENTRY", `Potential (${counts.potentialEntry})`],
-                ["WATCH_CLOSELY", `Watch (${counts.watchClosely})`],
-                ["NO_CLEAR_EDGE", `No edge (${counts.noClearEdge})`],
-                ["INSUFFICIENT_DATA", `Insufficient (${counts.insufficientData})`],
-              ] as Array<["ALL" | EventScannerSignal, string]>
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setSignalFilter(value)}
-                className={
-                  signalFilter === value
-                    ? "rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008]"
-                    : "rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-                }
-              >
-                {label}
-              </button>
-            ))}
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
+              Scan scope
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <ScopeButton
+                value="today_tomorrow"
+                label="Today + tomorrow"
+                activeScope={scope}
+                onClick={setScope}
+              />
+              <ScopeButton
+                value="today"
+                label="Today"
+                activeScope={scope}
+                onClick={setScope}
+              />
+              <ScopeButton
+                value="tomorrow"
+                label="Tomorrow"
+                activeScope={scope}
+                onClick={setScope}
+              />
+              <ScopeButton
+                value="all"
+                label="All open"
+                activeScope={scope}
+                onClick={setScope}
+              />
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={expandTopCandidates}
-              className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-            >
-              Expand top 5
-            </button>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
+                Signal filter
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    ["ALL", `All (${counts.all})`],
+                    ["POTENTIAL_ENTRY", `Potential (${counts.potentialEntry})`],
+                    ["WATCH_CLOSELY", `Watch (${counts.watchClosely})`],
+                    ["NO_CLEAR_EDGE", `No edge (${counts.noClearEdge})`],
+                    [
+                      "INSUFFICIENT_DATA",
+                      `Insufficient (${counts.insufficientData})`,
+                    ],
+                  ] as Array<["ALL" | EventScannerSignal, string]>
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSignalFilter(value)}
+                    className={
+                      signalFilter === value
+                        ? "rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008]"
+                        : "rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            <button
-              type="button"
-              onClick={collapseAll}
-              className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
-            >
-              Collapse all
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={expandTopCandidates}
+                className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+              >
+                Expand top 5
+              </button>
+
+              <button
+                type="button"
+                onClick={collapseAll}
+                className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+              >
+                Collapse all
+              </button>
+            </div>
           </div>
         </div>
       </section>

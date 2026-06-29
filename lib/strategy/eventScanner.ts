@@ -436,6 +436,7 @@ export async function scanKalshiWeatherEvent(
       openMeteoTemperatureF: openMeteoSummary.dailyMaxF,
       weatherAgreement,
     },
+    matchingPosition: null,
     rawEvent: event,
   };
 }

@@ -4,6 +4,12 @@ export type EventScannerSignal =
   | "NO_CLEAR_EDGE"
   | "INSUFFICIENT_DATA";
 
+export type EventScannerScope =
+  | "today_tomorrow"
+  | "today"
+  | "tomorrow"
+  | "all";
+
 export type EventScannerWeatherRead = {
   heldOrFavoriteBucket: string | null;
   nwsBucket: string | null;
@@ -25,6 +31,13 @@ export type EventScannerMarket = {
   status: string | null;
 };
 
+export type EventScannerMatchingPosition = {
+  ticker: string;
+  side: "yes" | "no" | "flat" | "unknown";
+  contractCount: number | null;
+  positionFp: number | null;
+};
+
 export type EventScannerResult = {
   eventTicker: string;
   seriesTicker: string;
@@ -41,17 +54,23 @@ export type EventScannerResult = {
   weatherFavorite: EventScannerMarket | null;
   markets: EventScannerMarket[];
   weather: EventScannerWeatherRead;
+  matchingPosition: EventScannerMatchingPosition | null;
   rawEvent?: Record<string, unknown>;
 };
 
 export type EventScannerResponse = {
   ok: boolean;
   generatedAt: string;
+  scope: EventScannerScope;
+  today: string;
+  tomorrow: string;
   results: EventScannerResult[];
   diagnostics: {
     scannedSeries: string[];
     eventCount: number;
     resultCount: number;
+    filteredOutByScope: number;
+    matchingPositionCount: number;
     errors: string[];
   };
 };
