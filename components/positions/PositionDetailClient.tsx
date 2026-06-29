@@ -118,6 +118,51 @@ type WeatherDetail = {
   };
 };
 
+
+type PositionReview = {
+  action:
+    | "HOLD"
+    | "WATCH_CLOSELY"
+    | "HOLD_OR_TRIM_PROFIT"
+    | "SELL_TO_LOCK_PROFIT"
+    | "SELL_FULL_POSITION"
+    | "CUT_LOSS"
+    | "ROLL_TO_BETTER_BUCKET"
+    | "NO_ACTION";
+  confidence: "low" | "medium" | "high";
+  summary: string;
+  reasons: string[];
+  risks: string[];
+  sellNow: {
+    exitValueDollars: number | null;
+    currentBidPrice: number | null;
+    unrealizedPnlAfterFeesDollars: number | null;
+  };
+  holdToExpiration: {
+    maxPayoutDollars: number | null;
+    remainingUpsideIfWinDollars: number | null;
+    riskIfHeldInsteadOfSoldDollars: number | null;
+  };
+  weatherRead: {
+    heldBucket: string | null;
+    observedBucket: string | null;
+    nwsBucket: string | null;
+    openMeteoBucket: string | null;
+    observedFloorStatus: string | null;
+    supportedBy: string[];
+    conflictCount: number;
+  };
+  rollCandidate: {
+    ticker: string;
+    label: string;
+    impliedProbability: number | null;
+    yesBid: number | null;
+    yesAskFromNoBid: number | null;
+  } | null;
+  aiReviewRequested: boolean;
+  aiReviewNote: string | null;
+};
+
 function formatDollars(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
     return "—";
@@ -634,6 +679,126 @@ function PositionWeatherPanel({
   );
 }
 
+
+function ReviewResultPanel({ review }: { review: PositionReview }) {
+  return (
+    <div className="mt-6 space-y-4">
+      <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <p className="text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
+          Deterministic action
+        </p>
+        <h3 className="mt-2 text-2xl font-bold text-[#22c55e]">
+          {review.action}
+        </h3>
+        <p className="mt-2 text-sm text-[#a8b3ad]">
+          Confidence:{" "}
+          <span className="font-semibold text-white">
+            {review.confidence.toUpperCase()}
+          </span>
+        </p>
+        <p className="mt-4 text-sm leading-6 text-[#f4f7f5]">
+          {review.summary}
+        </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <DataCard
+          label="Sell now"
+          value={formatDollars(review.sellNow.exitValueDollars)}
+        />
+        <DataCard
+          label="Risk if held"
+          value={formatDollars(
+            review.holdToExpiration.riskIfHeldInsteadOfSoldDollars
+          )}
+        />
+        <DataCard
+          label="Remaining upside"
+          value={formatDollars(
+            review.holdToExpiration.remainingUpsideIfWinDollars
+          )}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Reasons</h4>
+          <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+            {review.reasons.map((reason) => (
+              <li key={reason}>• {reason}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Risks</h4>
+          {review.risks.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
+              {review.risks.map((risk) => (
+                <li key={risk}>• {risk}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-[#a8b3ad]">
+              No major deterministic risk flags were generated.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <h4 className="font-semibold text-white">Weather support</h4>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <DataCard
+            label="Held bucket"
+            value={review.weatherRead.heldBucket ?? "—"}
+          />
+          <DataCard
+            label="NWS bucket"
+            value={review.weatherRead.nwsBucket ?? "—"}
+          />
+          <DataCard
+            label="Open-Meteo bucket"
+            value={review.weatherRead.openMeteoBucket ?? "—"}
+          />
+          <DataCard
+            label="Supported by"
+            value={
+              review.weatherRead.supportedBy.length > 0
+                ? review.weatherRead.supportedBy.join(", ")
+                : "No direct support"
+            }
+          />
+        </div>
+      </div>
+
+      {review.rollCandidate ? (
+        <div className="rounded-2xl border border-[#facc15]/30 bg-[#facc15]/10 p-5">
+          <h4 className="font-semibold text-[#fde68a]">Roll candidate</h4>
+          <p className="mt-2 text-sm leading-6 text-[#fde68a]">
+            {review.rollCandidate.label}{" "}
+            <span className="font-mono text-xs">
+              {review.rollCandidate.ticker}
+            </span>
+          </p>
+          <p className="mt-2 text-sm text-[#fde68a]">
+            Implied probability:{" "}
+            {review.rollCandidate.impliedProbability !== null
+              ? `${(review.rollCandidate.impliedProbability * 100).toFixed(1)}%`
+              : "—"}
+          </p>
+        </div>
+      ) : null}
+
+      {review.aiReviewNote ? (
+        <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5 text-sm leading-6 text-[#bae6fd]">
+          {review.aiReviewNote}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function PositionDetailClient({ ticker }: { ticker: string }) {
   const [detail, setDetail] = useState<PositionDetail | null>(null);
   const [weather, setWeather] = useState<WeatherDetail | null>(null);
@@ -642,8 +807,12 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
   const [loadingWeather, setLoadingWeather] = useState(false);
 
   const [aiReviewEnabled, setAiReviewEnabled] = useState(false);
+  const [review, setReview] = useState<PositionReview | null>(null);
+  const [loadingReview, setLoadingReview] = useState(false);
+
   const [error, setError] = useState("");
   const [weatherError, setWeatherError] = useState("");
+  const [reviewError, setReviewError] = useState("");
 
   async function loadDetail() {
     setLoading(true);
@@ -715,6 +884,50 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
       setWeatherError(message);
     } finally {
       setLoadingWeather(false);
+    }
+  }
+
+  async function runPositionReview() {
+    if (!detail) {
+      return;
+    }
+
+    setLoadingReview(true);
+    setReviewError("");
+
+    try {
+      const response = await fetch(
+        `/api/positions/${encodeURIComponent(ticker)}/review`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            position: detail.position,
+            weather,
+            basketMarkets: detail.basketMarkets,
+            aiReviewRequested: aiReviewEnabled,
+          }),
+        }
+      );
+
+      const body = await response.json();
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to run position review.");
+      }
+
+      setReview(body.review);
+    } catch (err) {
+      console.error(err);
+
+      const message =
+        err instanceof Error ? err.message : "Unable to run position review.";
+
+      setReviewError(message);
+    } finally {
+      setLoadingReview(false);
     }
   }
 
@@ -911,8 +1124,8 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
           <div>
             <h3 className="font-semibold text-white">AI review</h3>
             <p className="mt-1 text-sm text-[#a8b3ad]">
-              Toggle is ready. The deterministic review and AI review API will
-              be wired into this section after the detail page is stable.
+              Keep this off for deterministic-only review. Turn it on when you
+              want the later AI layer to review the same data package.
             </p>
           </div>
 
@@ -931,10 +1144,20 @@ export function PositionDetailClient({ ticker }: { ticker: string }) {
 
         <button
           type="button"
-          className="mt-5 rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a]"
+          onClick={() => void runPositionReview()}
+          disabled={loadingReview}
+          className="mt-5 rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Run Position Review
+          {loadingReview ? "Running review..." : "Run Position Review"}
         </button>
+
+        {reviewError ? (
+          <div className="mt-5 rounded-2xl border border-[#ef4444]/40 bg-[#ef4444]/10 p-4 text-sm text-[#fecaca]">
+            {reviewError}
+          </div>
+        ) : null}
+
+        {review ? <ReviewResultPanel review={review} /> : null}
       </Section>
 
       <Section eyebrow="Debug" title="Raw data">
