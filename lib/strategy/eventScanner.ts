@@ -3,9 +3,11 @@ import { getOpenMeteoForecast } from "@/lib/weather/openMeteoClient";
 import { getNwsForecastFromUrl, getNwsPoint } from "@/lib/weather/nwsClient";
 import { parseWeatherTicker } from "@/lib/weather/weatherMarketParser";
 import type {
+  EventForecastSynthesis,
   EventScannerFamily,
   EventScannerMarket,
   EventScannerResult,
+  EventScannerScoreBreakdown,
   EventScannerSignal,
 } from "@/types/eventScanner";
 
@@ -206,6 +208,171 @@ function getBucketRead(tempF: number | null) {
   const upper = lower + 1;
 
   return `${lower}° to ${upper}°`;
+}
+
+
+function clampScore(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function getConfidenceLabel(score: number): EventForecastSynthesis["confidenceLabel"] {
+  if (score >= 70) {
+    return "high";
+  }
+
+  if (score >= 45) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+function getSignalFromScore(score: number): EventScannerSignal {
+  if (score >= 65) {
+    return "POTENTIAL_ENTRY";
+  }
+
+  if (score >= 40) {
+    return "WATCH_CLOSELY";
+  }
+
+  return "NO_CLEAR_EDGE";
+}
+
+function getRangeBucket(label: string | null) {
+  if (!label) {
+    return null;
+  }
+
+  const match = label.match(/(\d+(?:\.\d+)?)\s*(?:°|degrees?)?\s*(?:to|-)\s*(\d+(?:\.\d+)?)/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const lower = Number(match[1]);
+  const upper = Number(match[2]);
+
+  if (!Number.isFinite(lower) || !Number.isFinite(upper)) {
+    return null;
+  }
+
+  return {
+    lower,
+    upper,
+    midpoint: (lower + upper) / 2,
+  };
+}
+
+function getBucketDistance(bucketA: string | null, bucketB: string | null) {
+  const parsedA = getRangeBucket(bucketA);
+  const parsedB = getRangeBucket(bucketB);
+
+  if (!parsedA || !parsedB) {
+    return null;
+  }
+
+  return Math.round(Math.abs(parsedA.midpoint - parsedB.midpoint) / 2);
+}
+
+function uniqueStrings(values: Array<string | null>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+}
+
+function averageNumbers(values: Array<number | null>) {
+  const numbers = values.filter((value): value is number => value !== null && Number.isFinite(value));
+
+  if (numbers.length === 0) {
+    return null;
+  }
+
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+}
+
+function findForecastFavoriteMarket(params: {
+  markets: EventScannerMarket[];
+  nwsBucket: string | null;
+  openMeteoBucket: string | null;
+}) {
+  const { markets, nwsBucket, openMeteoBucket } = params;
+
+  if (nwsBucket && openMeteoBucket) {
+    const distance = getBucketDistance(nwsBucket, openMeteoBucket);
+
+    if (distance === 0) {
+      return findMarketByBucket(markets, nwsBucket);
+    }
+
+    if (distance === 1) {
+      const nwsRange = getRangeBucket(nwsBucket);
+      const openMeteoRange = getRangeBucket(openMeteoBucket);
+
+      if (nwsRange && openMeteoRange) {
+        const midpoint = (nwsRange.midpoint + openMeteoRange.midpoint) / 2;
+        const sorted = markets
+          .map((market) => ({ market, range: getRangeBucket(market.label) }))
+          .filter(
+            (item): item is { market: EventScannerMarket; range: NonNullable<ReturnType<typeof getRangeBucket>> } =>
+              item.range !== null
+          )
+          .sort(
+            (a, b) =>
+              Math.abs(a.range.midpoint - midpoint) -
+              Math.abs(b.range.midpoint - midpoint)
+          );
+
+        return sorted[0]?.market ?? null;
+      }
+    }
+
+    return null;
+  }
+
+  return findMarketByBucket(markets, nwsBucket) ?? findMarketByBucket(markets, openMeteoBucket);
+}
+
+function buildForecastSynthesis(params: {
+  likelyBucket: string | null;
+  scoreBreakdown: EventScannerScoreBreakdown;
+  nwsTemperatureF: number | null;
+  openMeteoTemperatureF: number | null;
+  recentObservedMaxF?: number | null;
+  sourceAgreement: EventForecastSynthesis["sourceAgreement"];
+  reasoning: string[];
+  dataQualityNotes: string[];
+}): EventForecastSynthesis {
+  const {
+    likelyBucket,
+    scoreBreakdown,
+    nwsTemperatureF,
+    openMeteoTemperatureF,
+    recentObservedMaxF = null,
+    sourceAgreement,
+    reasoning,
+    dataQualityNotes,
+  } = params;
+
+  return {
+    predictedHighF: averageNumbers([nwsTemperatureF, openMeteoTemperatureF]),
+    likelyBucket,
+    alternateBuckets: uniqueStrings([getBucketRead(nwsTemperatureF), getBucketRead(openMeteoTemperatureF)]),
+    confidencePercent: scoreBreakdown.total,
+    confidenceLabel: getConfidenceLabel(scoreBreakdown.total),
+    sourceAgreement,
+    uncertaintyF:
+      nwsTemperatureF !== null && openMeteoTemperatureF !== null
+        ? Math.abs(nwsTemperatureF - openMeteoTemperatureF)
+        : null,
+    reasoning,
+    dataQualityNotes,
+    inputs: {
+      nwsForecastHighF: nwsTemperatureF,
+      openMeteoForecastHighF: openMeteoTemperatureF,
+      openMeteoEnsembleMeanHighF: null,
+      openMeteoEnsembleSpreadF: null,
+      recentObservedMaxF,
+    },
+  };
 }
 
 function pickNumber(market: Record<string, unknown>, keys: string[]) {
@@ -451,21 +618,30 @@ function scoreDailyEvent(params: {
   weatherFavorite: EventScannerMarket | null;
   nwsBucket: string | null;
   openMeteoBucket: string | null;
-  weatherAgreement: boolean;
+  nwsTemperatureF: number | null;
+  openMeteoTemperatureF: number | null;
 }) {
   const {
     marketFavorite,
     weatherFavorite,
     nwsBucket,
     openMeteoBucket,
-    weatherAgreement,
+    nwsTemperatureF,
+    openMeteoTemperatureF,
   } = params;
 
   const reasons: string[] = [];
   const risks: string[] = [];
+  const dataQualityNotes: string[] = [];
 
-  let score = 0;
-  let signal: EventScannerSignal = "NO_CLEAR_EDGE";
+  const emptyBreakdown: EventScannerScoreBreakdown = {
+    forecastAgreement: 0,
+    marketMismatch: 0,
+    priceAttractiveness: 0,
+    forecastStrength: 0,
+    dataQuality: 0,
+    total: 0,
+  };
 
   if (!marketFavorite) {
     return {
@@ -473,6 +649,16 @@ function scoreDailyEvent(params: {
       signal: "INSUFFICIENT_DATA" as EventScannerSignal,
       reasons: ["No priced market favorite was found."],
       risks: ["Market data may be missing or illiquid."],
+      scoreBreakdown: emptyBreakdown,
+      forecastSynthesis: buildForecastSynthesis({
+        likelyBucket: null,
+        scoreBreakdown: emptyBreakdown,
+        nwsTemperatureF,
+        openMeteoTemperatureF,
+        sourceAgreement: "insufficient",
+        reasoning: ["No priced market favorite was found."],
+        dataQualityNotes: ["Market pricing data was incomplete."],
+      }),
     };
   }
 
@@ -482,106 +668,200 @@ function scoreDailyEvent(params: {
       signal: "INSUFFICIENT_DATA" as EventScannerSignal,
       reasons: ["No usable forecast bucket was found from NWS or Open-Meteo."],
       risks: ["Forecast data may be unavailable for this event date."],
+      scoreBreakdown: emptyBreakdown,
+      forecastSynthesis: buildForecastSynthesis({
+        likelyBucket: null,
+        scoreBreakdown: emptyBreakdown,
+        nwsTemperatureF,
+        openMeteoTemperatureF,
+        sourceAgreement: "insufficient",
+        reasoning: ["No usable forecast bucket was found from NWS or Open-Meteo."],
+        dataQualityNotes: ["No usable forecast bucket was found."],
+      }),
     };
   }
 
-  if (weatherAgreement && nwsBucket) {
-    score += 35;
+  const bucketDistance = getBucketDistance(nwsBucket, openMeteoBucket);
+  const marketDistance = getBucketDistance(weatherFavorite?.label ?? null, marketFavorite.label);
+  const sourceCount = [nwsTemperatureF, openMeteoTemperatureF].filter(
+    (value) => value !== null && Number.isFinite(value)
+  ).length;
+
+  let sourceAgreement: EventForecastSynthesis["sourceAgreement"] = "insufficient";
+  let forecastAgreement = 0;
+
+  if (nwsBucket && openMeteoBucket && bucketDistance === 0) {
+    sourceAgreement = "strong";
+    forecastAgreement = 25;
     reasons.push(`NWS and Open-Meteo agree on forecast bucket ${nwsBucket}.`);
-  } else if (nwsBucket || openMeteoBucket) {
-    score += 10;
-    risks.push(
-      `NWS and Open-Meteo do not fully agree. NWS: ${
-        nwsBucket ?? "unavailable"
-      }, Open-Meteo: ${openMeteoBucket ?? "unavailable"}.`
+  } else if (nwsBucket && openMeteoBucket && bucketDistance === 1) {
+    sourceAgreement = "moderate";
+    forecastAgreement = 16;
+    reasons.push(`NWS and Open-Meteo are one bucket apart: ${nwsBucket} vs ${openMeteoBucket}.`);
+    risks.push("Forecast sources are close, but they do not agree on the exact bucket.");
+  } else if (nwsBucket && openMeteoBucket) {
+    sourceAgreement = "weak";
+    forecastAgreement = 6;
+    risks.push(`NWS and Open-Meteo disagree meaningfully. NWS: ${nwsBucket}, Open-Meteo: ${openMeteoBucket}.`);
+  } else {
+    sourceAgreement = "insufficient";
+    forecastAgreement = 8;
+    dataQualityNotes.push(
+      `Only one forecast bucket is available. NWS: ${nwsBucket ?? "unavailable"}, Open-Meteo: ${openMeteoBucket ?? "unavailable"}.`
     );
   }
 
   if (weatherFavorite) {
     reasons.push(`Forecast-supported weather basket: ${weatherFavorite.label}.`);
   } else {
-    risks.push(
-      "The forecast-supported bucket could not be matched to an open Kalshi basket."
-    );
+    risks.push("No single forecast-supported basket could be selected from the current forecast read.");
   }
 
   reasons.push(`Market favorite: ${marketFavorite.label}.`);
 
-  const forecastDiffersFromMarket =
-    Boolean(weatherFavorite) && weatherFavorite?.ticker !== marketFavorite.ticker;
+  let marketMismatch = 0;
 
-  if (weatherAgreement && weatherFavorite && forecastDiffersFromMarket) {
-    score += 30;
-    reasons.push(
-      "Forecast sources support a basket that is different from the current market favorite."
-    );
+  if (weatherFavorite && marketDistance !== null) {
+    if (marketDistance >= 4) {
+      marketMismatch = 25;
+    } else if (marketDistance === 3) {
+      marketMismatch = 21;
+    } else if (marketDistance === 2) {
+      marketMismatch = 15;
+    } else if (marketDistance === 1) {
+      marketMismatch = 8;
+    } else {
+      marketMismatch = 0;
+    }
+
+    if (marketDistance > 0) {
+      reasons.push(
+        `Forecast basket is ${marketDistance} bucket${marketDistance === 1 ? "" : "s"} away from the current market favorite.`
+      );
+    }
+  }
+
+  let priceAttractiveness = 0;
+
+  if (weatherFavorite?.yesAskEstimate !== null && weatherFavorite?.yesAskEstimate !== undefined) {
+    const ask = weatherFavorite.yesAskEstimate;
+
+    if (ask <= 0.25) {
+      priceAttractiveness += 14;
+    } else if (ask <= 0.4) {
+      priceAttractiveness += 11;
+    } else if (ask <= 0.55) {
+      priceAttractiveness += 7;
+    } else if (ask <= 0.7) {
+      priceAttractiveness += 3;
+    } else {
+      risks.push("Forecast-supported basket may already be expensive.");
+    }
+
+    if (ask <= 0.55) {
+      reasons.push(`Forecast-supported basket has an estimated YES ask of $${ask.toFixed(2)}.`);
+    }
+  } else if (weatherFavorite) {
+    risks.push("Forecast-supported basket does not have a usable YES ask estimate.");
   }
 
   if (
     weatherFavorite &&
-    forecastDiffersFromMarket &&
+    weatherFavorite.ticker !== marketFavorite.ticker &&
     weatherFavorite.impliedProbability !== null &&
     marketFavorite.impliedProbability !== null
   ) {
     const gap = marketFavorite.impliedProbability - weatherFavorite.impliedProbability;
 
-    if (gap >= 0.2) {
-      score += 25;
+    if (gap >= 0.25) {
+      priceAttractiveness += 6;
       reasons.push(
-        `Forecast-supported basket is priced ${(gap * 100).toFixed(
-          1
-        )} percentage points below the market favorite.`
+        `Forecast basket is priced ${(gap * 100).toFixed(1)} percentage points below the market favorite.`
       );
-    } else if (gap >= 0.1) {
-      score += 15;
+    } else if (gap >= 0.12) {
+      priceAttractiveness += 4;
       reasons.push(
-        `Forecast-supported basket is priced ${(gap * 100).toFixed(
-          1
-        )} percentage points below the market favorite.`
+        `Forecast basket is priced ${(gap * 100).toFixed(1)} percentage points below the market favorite.`
       );
     } else if (gap > 0) {
-      score += 5;
-      reasons.push(
-        `Forecast-supported basket is slightly cheaper than the market favorite.`
-      );
+      priceAttractiveness += 2;
+      reasons.push("Forecast basket is slightly cheaper than the market favorite.");
     }
   }
 
-  if (weatherFavorite && weatherFavorite.yesAskEstimate === null) {
-    risks.push(
-      "Forecast-supported basket does not have a usable YES ask estimate."
-    );
-  }
+  priceAttractiveness = Math.min(20, priceAttractiveness);
 
-  if (weatherFavorite && weatherFavorite.yesAskEstimate !== null) {
-    if (weatherFavorite.yesAskEstimate <= 0.35) {
-      score += 20;
-      reasons.push(
-        "Forecast-supported basket has an estimated YES ask at or below $0.35."
-      );
-    } else if (weatherFavorite.yesAskEstimate <= 0.5) {
-      score += 10;
-      reasons.push(
-        "Forecast-supported basket has an estimated YES ask at or below $0.50."
-      );
-    } else if (weatherFavorite.yesAskEstimate >= 0.75) {
-      risks.push("Forecast-supported basket may already be expensive.");
+  let forecastStrength = 0;
+  const temperatureSpread =
+    nwsTemperatureF !== null && openMeteoTemperatureF !== null
+      ? Math.abs(nwsTemperatureF - openMeteoTemperatureF)
+      : null;
+
+  if (temperatureSpread !== null) {
+    if (temperatureSpread <= 1) {
+      forecastStrength = 15;
+      reasons.push("Forecast temperatures are tightly clustered within 1°F.");
+    } else if (temperatureSpread <= 2) {
+      forecastStrength = 12;
+      reasons.push("Forecast temperatures are clustered within 2°F.");
+    } else if (temperatureSpread <= 4) {
+      forecastStrength = 7;
+    } else {
+      forecastStrength = 2;
+      risks.push("Forecast temperature spread is wide enough to reduce confidence.");
     }
+  } else if (sourceCount === 1) {
+    forecastStrength = 5;
   }
 
-  if (score >= 75) {
-    signal = "POTENTIAL_ENTRY";
-  } else if (score >= 35) {
-    signal = "WATCH_CLOSELY";
-  } else {
-    signal = "NO_CLEAR_EDGE";
+  let dataQuality = 0;
+
+  if (sourceCount === 2) {
+    dataQuality = 15;
+  } else if (sourceCount === 1) {
+    dataQuality = 7;
   }
+
+  if (sourceCount < 2) {
+    dataQualityNotes.push("Only one forecast source produced a usable temperature.");
+  }
+
+  if (!weatherFavorite) {
+    dataQualityNotes.push("No matched Kalshi basket was selected from the forecast read.");
+  }
+
+  const scoreBreakdown: EventScannerScoreBreakdown = {
+    forecastAgreement,
+    marketMismatch,
+    priceAttractiveness,
+    forecastStrength,
+    dataQuality,
+    total: clampScore(
+      forecastAgreement +
+        marketMismatch +
+        priceAttractiveness +
+        forecastStrength +
+        dataQuality
+    ),
+  };
+
+  const signal = getSignalFromScore(scoreBreakdown.total);
 
   return {
-    score,
+    score: scoreBreakdown.total,
     signal,
     reasons,
     risks,
+    scoreBreakdown,
+    forecastSynthesis: buildForecastSynthesis({
+      likelyBucket: weatherFavorite?.label ?? null,
+      scoreBreakdown,
+      nwsTemperatureF,
+      openMeteoTemperatureF,
+      sourceAgreement,
+      reasoning: reasons,
+      dataQualityNotes,
+    }),
   };
 }
 
@@ -744,18 +1024,19 @@ async function scanDailyHighEvent(
     Boolean(nwsBucket && openMeteoBucket && nwsBucket === openMeteoBucket);
 
   const marketFavorite = getMarketFavorite(markets);
-  const agreedForecastBucket = weatherAgreement ? nwsBucket : null;
-  const weatherFavorite =
-    findMarketByBucket(markets, agreedForecastBucket) ??
-    findMarketByBucket(markets, nwsBucket) ??
-    findMarketByBucket(markets, openMeteoBucket);
+  const weatherFavorite = findForecastFavoriteMarket({
+    markets,
+    nwsBucket,
+    openMeteoBucket,
+  });
 
   const scored = scoreDailyEvent({
     marketFavorite,
     weatherFavorite,
     nwsBucket,
     openMeteoBucket,
-    weatherAgreement,
+    nwsTemperatureF: nwsSummary.temperatureF,
+    openMeteoTemperatureF: openMeteoSummary.dailyMaxF,
   });
 
   const title =
@@ -775,6 +1056,8 @@ async function scanDailyHighEvent(
     title,
     signal: scored.signal,
     score: scored.score,
+    scoreBreakdown: scored.scoreBreakdown,
+    forecastSynthesis: scored.forecastSynthesis,
     summary:
       scored.signal === "POTENTIAL_ENTRY"
         ? "Forecast-supported entry candidate based on weather-market disagreement."
@@ -921,6 +1204,8 @@ async function scanHourlyTemperatureEvent(
     title,
     signal: scored.signal,
     score: scored.score,
+    scoreBreakdown: null,
+    forecastSynthesis: null,
     summary:
       scored.signal === "POTENTIAL_ENTRY"
         ? "Possible hourly entry candidate based on forecast-threshold disagreement."

@@ -42,6 +42,34 @@ export type EventScannerMatchingPosition = {
   positionFp: number | null;
 };
 
+export type EventForecastSynthesis = {
+  predictedHighF: number | null;
+  likelyBucket: string | null;
+  alternateBuckets: string[];
+  confidencePercent: number;
+  confidenceLabel: "low" | "medium" | "high";
+  sourceAgreement: "strong" | "moderate" | "weak" | "insufficient";
+  uncertaintyF: number | null;
+  reasoning: string[];
+  dataQualityNotes: string[];
+  inputs: {
+    nwsForecastHighF: number | null;
+    openMeteoForecastHighF: number | null;
+    openMeteoEnsembleMeanHighF: number | null;
+    openMeteoEnsembleSpreadF: number | null;
+    recentObservedMaxF: number | null;
+  };
+};
+
+export type EventScannerScoreBreakdown = {
+  forecastAgreement: number;
+  marketMismatch: number;
+  priceAttractiveness: number;
+  forecastStrength: number;
+  dataQuality: number;
+  total: number;
+};
+
 export type EventScannerResult = {
   family: EventScannerFamily;
   eventTicker: string;
@@ -54,6 +82,8 @@ export type EventScannerResult = {
   title: string;
   signal: EventScannerSignal;
   score: number;
+  scoreBreakdown: EventScannerScoreBreakdown | null;
+  forecastSynthesis: EventForecastSynthesis | null;
   summary: string;
   reasons: string[];
   risks: string[];

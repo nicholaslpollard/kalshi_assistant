@@ -36,6 +36,34 @@ type EventScannerMatchingPosition = {
   positionFp: number | null;
 };
 
+type EventForecastSynthesis = {
+  predictedHighF: number | null;
+  likelyBucket: string | null;
+  alternateBuckets: string[];
+  confidencePercent: number;
+  confidenceLabel: "low" | "medium" | "high";
+  sourceAgreement: "strong" | "moderate" | "weak" | "insufficient";
+  uncertaintyF: number | null;
+  reasoning: string[];
+  dataQualityNotes: string[];
+  inputs: {
+    nwsForecastHighF: number | null;
+    openMeteoForecastHighF: number | null;
+    openMeteoEnsembleMeanHighF: number | null;
+    openMeteoEnsembleSpreadF: number | null;
+    recentObservedMaxF: number | null;
+  };
+};
+
+type EventScannerScoreBreakdown = {
+  forecastAgreement: number;
+  marketMismatch: number;
+  priceAttractiveness: number;
+  forecastStrength: number;
+  dataQuality: number;
+  total: number;
+};
+
 type EventAiReview = {
   action: "ENTER_YES" | "WATCH_ONLY" | "AVOID" | "INSUFFICIENT_DATA";
   recommendedBasketTicker: string | null;
@@ -78,6 +106,8 @@ type EventScannerResult = {
   title: string;
   signal: EventScannerSignal;
   score: number;
+  scoreBreakdown: EventScannerScoreBreakdown | null;
+  forecastSynthesis: EventForecastSynthesis | null;
   summary: string;
   reasons: string[];
   risks: string[];
@@ -242,6 +272,97 @@ function MiniStat({
         {label}
       </p>
       <p className="mt-2 text-lg font-bold text-white">{value}</p>
+    </div>
+  );
+}
+
+function ScoreBreakdownPanel({
+  scoreBreakdown,
+  forecastSynthesis,
+}: {
+  scoreBreakdown: EventScannerScoreBreakdown | null;
+  forecastSynthesis: EventForecastSynthesis | null;
+}) {
+  if (!scoreBreakdown && !forecastSynthesis) {
+    return null;
+  }
+
+  const breakdownItems: Array<[string, number, number]> = scoreBreakdown
+    ? [
+        ["Forecast agreement", scoreBreakdown.forecastAgreement, 25],
+        ["Market mismatch", scoreBreakdown.marketMismatch, 25],
+        ["Price attractiveness", scoreBreakdown.priceAttractiveness, 20],
+        ["Forecast strength", scoreBreakdown.forecastStrength, 15],
+        ["Data quality", scoreBreakdown.dataQuality, 15],
+      ]
+    : [];
+
+  return (
+    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
+            Forecast confidence score
+          </p>
+          <h3 className="mt-2 text-2xl font-bold text-white">
+            {scoreBreakdown ? `${scoreBreakdown.total}/100` : "—"}
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-[#a8b3ad]">
+            This score weighs source agreement, market mismatch, price, forecast
+            strength, and data quality. It is not reduced just because the event
+            is tomorrow.
+          </p>
+        </div>
+
+        {forecastSynthesis ? (
+          <div className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-4 md:w-[320px]">
+            <p className="text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
+              Forecast synthesis
+            </p>
+            <p className="mt-2 text-sm text-[#a8b3ad]">
+              Likely bucket: {forecastSynthesis.likelyBucket ?? "—"}
+            </p>
+            <p className="mt-1 text-sm text-[#a8b3ad]">
+              Predicted high: {formatTemp(forecastSynthesis.predictedHighF)}
+            </p>
+            <p className="mt-1 text-sm text-[#a8b3ad]">
+              Source agreement: {forecastSynthesis.sourceAgreement}
+            </p>
+            <p className="mt-1 text-sm text-[#a8b3ad]">
+              Uncertainty: {formatTemp(forecastSynthesis.uncertaintyF)}
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      {breakdownItems.length > 0 ? (
+        <div className="mt-5 grid gap-3 md:grid-cols-5">
+          {breakdownItems.map(([label, value, max]) => (
+            <div
+              key={String(label)}
+              className="rounded-xl border border-[#1f2a24] bg-[#101714] p-3"
+            >
+              <p className="text-xs uppercase tracking-[0.16em] text-[#6f7b74]">
+                {label}
+              </p>
+              <p className="mt-2 font-bold text-white">
+                {value}/{max}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {forecastSynthesis?.dataQualityNotes.length ? (
+        <div className="mt-5 rounded-xl border border-[#facc15]/30 bg-[#facc15]/10 p-4">
+          <p className="text-sm font-semibold text-[#fde68a]">Data quality notes</p>
+          <ul className="mt-2 space-y-1 text-sm leading-6 text-[#fde68a]">
+            {forecastSynthesis.dataQualityNotes.map((note) => (
+              <li key={note}>• {note}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -582,7 +703,7 @@ function EventCard({
               </span>
 
               <span className="rounded-full border border-[#1f2a24] bg-[#0b120f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#a8b3ad]">
-                Score {event.score}
+                Score {event.score}/100
               </span>
 
               <span className="rounded-full border border-[#1f2a24] bg-[#0b120f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#a8b3ad]">
@@ -734,6 +855,11 @@ function EventCard({
               }
             />
           </div>
+
+          <ScoreBreakdownPanel
+            scoreBreakdown={event.scoreBreakdown}
+            forecastSynthesis={event.forecastSynthesis}
+          />
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
