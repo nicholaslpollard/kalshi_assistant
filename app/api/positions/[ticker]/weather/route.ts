@@ -233,8 +233,10 @@ function getBucketRead(tempF: number | null) {
     return null;
   }
 
-  const rounded = Math.round(tempF);
-  const lower = rounded % 2 === 0 ? rounded : rounded - 1;
+  // Kalshi daily high range buckets are midpoint-coded in tickers: B74.5 = 74° to 75°,
+  // B80.5 = 80° to 81°, B93.5 = 93° to 94°. Forecast temperatures should be
+  // mapped by flooring to the lower bound and adding one degree for the upper bound.
+  const lower = Math.floor(tempF);
   const upper = lower + 1;
 
   return `${lower}° to ${upper}°`;

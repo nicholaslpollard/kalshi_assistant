@@ -2,11 +2,15 @@ import { getServerUserFromRequest } from "@/lib/auth/getServerUser";
 import { WEATHER_MARKETS } from "@/lib/config/weatherMarkets";
 import { getDecryptedOpenAiCredentials } from "@/lib/data/credentialRepository";
 import { runPositionAiReview } from "@/lib/openai/positionAiReview";
-import { getOpenMeteoForecast } from "@/lib/weather/openMeteoClient";
+import {
+  getOpenMeteoEvidenceForecasts,
+  getOpenMeteoForecast,
+} from "@/lib/weather/openMeteoClient";
 import { buildWeatherEvidencePacket } from "@/lib/weather/weatherEvidence";
 import {
   getNwsAlerts,
   getNwsForecastFromUrl,
+  getNwsGridpointDataFromUrl,
   getNwsPoint,
   getNwsStationObservations,
 } from "@/lib/weather/nwsClient";
@@ -78,15 +82,30 @@ async function buildPositionWeatherEvidence(params: {
         ? pointProperties.forecastHourly
         : null;
 
-    const [forecast, hourlyForecast, observations, alerts, openMeteo] =
+    const gridpointDataUrl =
+      typeof pointProperties?.forecastGridData === "string"
+        ? pointProperties.forecastGridData
+        : null;
+
+    const [forecast, hourlyForecast, gridpointData, observations, alerts, openMeteo, openMeteoEvidence] =
       await Promise.all([
         forecastUrl ? getNwsForecastFromUrl(forecastUrl) : Promise.resolve(null),
         hourlyForecastUrl
           ? getNwsForecastFromUrl(hourlyForecastUrl)
           : Promise.resolve(null),
+        gridpointDataUrl
+          ? getNwsGridpointDataFromUrl(gridpointDataUrl)
+          : Promise.resolve(null),
         getNwsStationObservations(config.nwsObservationStation),
         getNwsAlerts(config.latitude, config.longitude),
         getOpenMeteoForecast({
+          latitude: config.latitude,
+          longitude: config.longitude,
+          timezone: config.timezone,
+          startDate: parsed.eventDate,
+          endDate: parsed.eventDate,
+        }),
+        getOpenMeteoEvidenceForecasts({
           latitude: config.latitude,
           longitude: config.longitude,
           timezone: config.timezone,
@@ -105,9 +124,11 @@ async function buildPositionWeatherEvidence(params: {
       nwsPoint: point,
       nwsDailyForecast: forecast,
       nwsHourlyForecast: hourlyForecast,
+      nwsGridpointData: gridpointData,
       nwsObservations: observations,
       nwsAlerts: alerts,
       openMeteo,
+      openMeteoEvidence,
     }) as WeatherEvidenceResult;
   } catch (error) {
     return {

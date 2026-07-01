@@ -1,11 +1,13 @@
 const NWS_BASE_URL = "https://api.weather.gov";
 
+const NWS_HEADERS = {
+  Accept: "application/geo+json, application/json",
+  "User-Agent": "kalshi-assistant-web/0.1 contact:nicholaslpollard@gmail.com",
+};
+
 async function nwsFetch<T>(path: string): Promise<T> {
   const response = await fetch(`${NWS_BASE_URL}${path}`, {
-    headers: {
-      Accept: "application/geo+json, application/json",
-      "User-Agent": "kalshi-assistant-web/0.1 contact:nicholaslpollard@gmail.com",
-    },
+    headers: NWS_HEADERS,
     cache: "no-store",
   });
 
@@ -16,6 +18,19 @@ async function nwsFetch<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function nwsFetchUrl(url: string, label: string) {
+  const response = await fetch(url, {
+    headers: NWS_HEADERS,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`${label} request failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
 export async function getNwsPoint(latitude: number, longitude: number) {
   return nwsFetch<Record<string, unknown>>(
     `/points/${latitude.toFixed(4)},${longitude.toFixed(4)}`
@@ -23,19 +38,11 @@ export async function getNwsPoint(latitude: number, longitude: number) {
 }
 
 export async function getNwsForecastFromUrl(url: string) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/geo+json, application/json",
-      "User-Agent": "kalshi-assistant-web/0.1 contact:nicholaslpollard@gmail.com",
-    },
-    cache: "no-store",
-  });
+  return nwsFetchUrl(url, "NWS forecast");
+}
 
-  if (!response.ok) {
-    throw new Error(`NWS forecast request failed: ${response.status}`);
-  }
-
-  return response.json() as Promise<Record<string, unknown>>;
+export async function getNwsGridpointDataFromUrl(url: string) {
+  return nwsFetchUrl(url, "NWS gridpoint data");
 }
 
 export async function getNwsHourlyForecastFromPoint(
@@ -52,6 +59,22 @@ export async function getNwsHourlyForecastFromPoint(
   }
 
   return getNwsForecastFromUrl(forecastHourlyUrl);
+}
+
+export async function getNwsGridpointDataFromPoint(
+  point: Record<string, unknown>
+) {
+  const properties = point.properties as Record<string, unknown> | undefined;
+  const forecastGridDataUrl =
+    typeof properties?.forecastGridData === "string"
+      ? properties.forecastGridData
+      : null;
+
+  if (!forecastGridDataUrl) {
+    return null;
+  }
+
+  return getNwsGridpointDataFromUrl(forecastGridDataUrl);
 }
 
 export async function getNwsStationObservations(stationId: string) {

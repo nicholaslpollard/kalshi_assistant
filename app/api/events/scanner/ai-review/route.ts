@@ -6,11 +6,15 @@ import {
 } from "@/lib/data/credentialRepository";
 import { getKalshiEventWithMarkets } from "@/lib/kalshi/client";
 import { runEventAiReview } from "@/lib/openai/eventAiReview";
-import { getOpenMeteoForecast } from "@/lib/weather/openMeteoClient";
+import {
+  getOpenMeteoEvidenceForecasts,
+  getOpenMeteoForecast,
+} from "@/lib/weather/openMeteoClient";
 import { buildWeatherEvidencePacket } from "@/lib/weather/weatherEvidence";
 import {
   getNwsAlerts,
   getNwsForecastFromUrl,
+  getNwsGridpointDataFromUrl,
   getNwsPoint,
   getNwsStationObservations,
 } from "@/lib/weather/nwsClient";
@@ -466,15 +470,30 @@ export async function POST(request: Request) {
         ? pointProperties.forecastHourly
         : null;
 
-    const [forecast, hourlyForecast, observations, alerts, openMeteo] =
+    const gridpointDataUrl =
+      typeof pointProperties?.forecastGridData === "string"
+        ? pointProperties.forecastGridData
+        : null;
+
+    const [forecast, hourlyForecast, gridpointData, observations, alerts, openMeteo, openMeteoEvidence] =
       await Promise.all([
         forecastUrl ? getNwsForecastFromUrl(forecastUrl) : Promise.resolve(null),
         hourlyForecastUrl
           ? getNwsForecastFromUrl(hourlyForecastUrl)
           : Promise.resolve(null),
+        gridpointDataUrl
+          ? getNwsGridpointDataFromUrl(gridpointDataUrl)
+          : Promise.resolve(null),
         getNwsStationObservations(config.nwsObservationStation),
         getNwsAlerts(config.latitude, config.longitude),
         getOpenMeteoForecast({
+          latitude: config.latitude,
+          longitude: config.longitude,
+          timezone: config.timezone,
+          startDate: eventContext.eventDate,
+          endDate: eventContext.eventDate,
+        }),
+        getOpenMeteoEvidenceForecasts({
           latitude: config.latitude,
           longitude: config.longitude,
           timezone: config.timezone,
@@ -490,12 +509,19 @@ export async function POST(request: Request) {
       latitude: config.latitude,
       longitude: config.longitude,
       eventDate: eventContext.eventDate,
+      eventFamily:
+        eventContext.family === "hourly_temperature"
+          ? "hourly_temperature"
+          : "daily_high",
+      eventHourLocal: eventContext.eventHourLocal,
       nwsPoint: point,
       nwsDailyForecast: forecast,
       nwsHourlyForecast: hourlyForecast,
+      nwsGridpointData: gridpointData,
       nwsObservations: observations,
       nwsAlerts: alerts,
       openMeteo,
+      openMeteoEvidence,
     });
 
     const aiReview = await runEventAiReview({

@@ -271,15 +271,17 @@ You do not know or use the app's deterministic scanner score.
 You must not assume there is an opportunity.
 You independently interpret Kalshi market pricing, NWS data, Open-Meteo data, observations, and the normalized weather evidence packet when available.
 
-When a weatherEvidence packet is provided, use it as the primary structured source for observation trend, observed high so far, remaining heating window, NWS/Open-Meteo forecast highs, atmospheric conditions, and source agreement. Use the raw NWS/Open-Meteo payloads as supporting detail.
+When a weatherEvidence packet is provided, use it as the primary structured source for observation trend, observed high so far, remaining heating window, NWS/Open-Meteo forecast highs, NWS raw gridpoint evidence, Open-Meteo model evidence, ensemble spread, atmospheric conditions, bucket analysis, and source agreement. Use the raw NWS/Open-Meteo payloads as supporting detail.
 
-For same-day daily-high events, explicitly evaluate: current winning bucket, observed high so far, latest reading, recent trend, remaining heating window, overshoot risk, cloud cover, wind, humidity, and storm/outflow risk.
+For same-day daily-high events, explicitly evaluate: current winning bucket, observed high so far, latest reading, recent trend, remaining heating window, overshoot risk, cloud cover, wind, humidity, NWS grid maxTemperature, Open-Meteo HRRR/NBM/GFS/ECMWF model agreement, ensemble spread, and storm/outflow risk.
 
-For tomorrow or future daily-high events, observations may be unavailable or irrelevant. Do not mark a future event insufficient only because there are no same-day observations. Use NWS forecast highs and Open-Meteo daily maximum forecasts as the primary evidence, compare them to the available Kalshi range baskets, and identify the forecast-supported basket if one exists.
+For tomorrow or future daily-high events, observations may be unavailable or irrelevant. Do not mark a future event insufficient only because there are no same-day observations. Use NWS daily/hourly/gridpoint forecast highs, Open-Meteo best-match/HRRR/NBM/GFS/ECMWF highs, and ensemble mean/spread as the primary evidence. Compare them to the available Kalshi range baskets and identify the forecast-supported basket if one exists.
 
 For hourly temperature events, use NWS hourly forecast and Open-Meteo hourly forecast for the target local hour as the primary evidence.
 
 The app may provide one app-selected candidate basket. Treat it only as a candidate to evaluate, not as a conclusion. You may agree, partially agree, disagree, recommend a different basket, recommend watching only, or recommend avoiding the event.
+
+Daily high bucket rule: Kalshi buckets with midpoint tickers are true one-degree ranges. B74.5 means 74° to 75°, B80.5 means 80° to 81°, and B93.5 means 93° to 94°. Do not treat these as above-threshold markets. When translating a forecast temperature into a daily high bucket, floor the temperature to the lower whole degree and add one degree for the upper bound.
 
 Your job is to explain what the data means, make an independent final-temperature/bucket forecast, and give an opinion on which basket, if any, is worth entering or worth watching.
 Your confidence must reflect the reliability of the data and how strong the conclusion is at this moment.
@@ -291,7 +293,8 @@ Return only valid JSON matching the requested schema.
     importantRules: [
       "Do not use any deterministic scanner score, signal, reasons, or risks.",
       "The appCandidateBasket is only a candidate. Do not assume it is correct.",
-      "Use the weatherEvidence packet when available. It contains normalized observations, forecast highs, trend, atmosphere, timing, and model agreement.",
+      "Use the weatherEvidence packet when available. It contains normalized observations, NWS daily/hourly/gridpoint highs, Open-Meteo model evidence, ensemble spread, trend, atmosphere, timing, bucket analysis, and model agreement.",
+      "Daily high bucket mapping is floor-to-next-degree: 74.5 = 74° to 75°, 80.5 = 80° to 81°, 93.5 = 93° to 94°. Do not describe midpoint-coded daily buckets as above-threshold markets.",
       "For same-day events, discuss observed high so far, whether the candidate bucket is already hit, overshoot risk, recent trend, and remaining heating window.",
       "For tomorrow/future daily-high events, use NWS and Open-Meteo forecast highs as primary evidence even when observations are missing.",
       "For future events, identify the forecast-supported basket and compare it to market pricing.",

@@ -1,11 +1,4 @@
-import { getOpenMeteoForecast } from "@/lib/weather/openMeteoClient";
-import {
-  getNwsAlerts,
-  getNwsForecastFromUrl,
-  getNwsHourlyForecastFromPoint,
-  getNwsPoint,
-  getNwsStationObservations,
-} from "@/lib/weather/nwsClient";
+import type { OpenMeteoEvidenceForecasts } from "@/lib/weather/openMeteoClient";
 
 export type WeatherEvidenceTrend =
   | "rising"
@@ -23,17 +16,22 @@ export type WeatherEvidencePacket = {
     longitude: number;
   };
   event: {
+    family: "daily_high" | "hourly_temperature";
     date: string;
     localNow: string | null;
     isToday: boolean;
     isTomorrow: boolean;
+    isFuture: boolean;
+    eventHourLocal: number | null;
     remainingHeatingHours: number | null;
+    settlementAnchor: "official_station_observation";
   };
   observations: {
     latestTempF: number | null;
     latestObservationTimeLocal: string | null;
     observedHighF: number | null;
     observedHighTimeLocal: string | null;
+    currentTempVsObservedHighF: number | null;
     observationCountForEventDate: number;
     recentReadings: Array<{
       timeLocal: string;
@@ -53,41 +51,122 @@ export type WeatherEvidencePacket = {
     nwsDailyHighF: number | null;
     nwsHourlyHighF: number | null;
     nwsHourlyHighTimeLocal: string | null;
+    nwsGridMaxTemperatureF: number | null;
+    nwsGridMaxTemperatureTimeLocal: string | null;
     openMeteoDailyHighF: number | null;
     openMeteoHourlyHighF: number | null;
     openMeteoHourlyHighTimeLocal: string | null;
     forecastHighAverageF: number | null;
+    forecastHighMedianF: number | null;
     forecastSpreadF: number | null;
     modelAgreement: "strong" | "moderate" | "weak" | "insufficient";
     likelyTemperatureF: number | null;
+    likelyBucket: string | null;
+    alternateBuckets: string[];
     alternateTemperatureRangeF: {
       low: number | null;
       high: number | null;
     };
   };
+  openMeteoModels: {
+    bestMatch: ModelEvidence | null;
+    hrrr: ModelEvidence | null;
+    nbm: ModelEvidence | null;
+    gfs: ModelEvidence | null;
+    ecmwf: ModelEvidence | null;
+    ensemble: EnsembleEvidence | null;
+    sourceErrors: string[];
+  };
+  nwsGrid: {
+    updateTime: string | null;
+    validTimes: string | null;
+    rawMaxTemperatureF: number | null;
+    rawMaxTemperatureTimeLocal: string | null;
+    peakWindow: PeakWindowPoint[];
+    hazards: string[];
+    weatherSummary: string | null;
+  };
   atmosphere: {
     cloudCoverPercentNearHigh: number | null;
+    lowCloudCoverPercentNearHigh: number | null;
+    midCloudCoverPercentNearHigh: number | null;
+    highCloudCoverPercentNearHigh: number | null;
     windSpeedMphNearHigh: number | null;
     windGustMphNearHigh: number | null;
     windDirectionDegreesNearHigh: number | null;
     dewPointFNearHigh: number | null;
     humidityPercentNearHigh: number | null;
     shortwaveRadiationNearHigh: number | null;
+    sunshineDurationSecondsNearHigh: number | null;
     precipitationProbabilityNearHigh: number | null;
+    thunderstormProbabilityNearHigh: number | null;
+    capeNearHigh: number | null;
+    liftedIndexNearHigh: number | null;
+    convectiveInhibitionNearHigh: number | null;
+    boundaryLayerHeightMetersNearHigh: number | null;
     thunderstormRiskText: string | null;
     latestCloudText: string | null;
     latestWindSpeedMph: number | null;
     latestWindGustMph: number | null;
     latestHumidityPercent: number | null;
   };
+  bucketAnalysis: {
+    mostLikelyBucket: string | null;
+    secondMostLikelyBucket: string | null;
+    hotTailBucket: string | null;
+    coolTailBucket: string | null;
+    bucketConfidencePercent: number | null;
+    overshootRisk: "high" | "moderate" | "low" | "insufficient";
+    capRisk: "high" | "moderate" | "low" | "insufficient";
+  };
+  reasoning: {
+    summary: string;
+    supportiveFactors: string[];
+    limitingFactors: string[];
+    watchTriggers: string[];
+    invalidationSignals: string[];
+  };
   rawSources: {
     nwsPoint: Record<string, unknown> | null;
     nwsDailyForecast: Record<string, unknown> | null;
     nwsHourlyForecast: Record<string, unknown> | null;
+    nwsGridpointData: Record<string, unknown> | null;
     nwsAlerts: Record<string, unknown> | null;
     openMeteo: Record<string, unknown> | null;
+    openMeteoEvidence: OpenMeteoEvidenceForecasts | null;
   };
   evidenceNotes: string[];
+};
+
+type ModelEvidence = {
+  label: string;
+  dailyHighF: number | null;
+  hourlyHighF: number | null;
+  hourlyHighTimeLocal: string | null;
+  likelyBucket: string | null;
+  peakIndex: number | null;
+  peakConditions: Record<string, number | null>;
+};
+
+type EnsembleEvidence = ModelEvidence & {
+  temperatureSpreadFNearHigh: number | null;
+  highRangeApproxF: { low: number | null; high: number | null };
+  uncertaintyBucket: string | null;
+};
+
+type PeakWindowPoint = {
+  timeLocal: string;
+  temperatureF: number | null;
+  maxTemperatureF: number | null;
+  dewPointF: number | null;
+  relativeHumidityPercent: number | null;
+  skyCoverPercent: number | null;
+  windDirectionDegrees: number | null;
+  windSpeedMph: number | null;
+  windGustMph: number | null;
+  probabilityOfPrecipitationPercent: number | null;
+  probabilityOfThunderPercent: number | null;
+  pressureMb: number | null;
 };
 
 function toNumber(value: unknown) {
@@ -97,7 +176,6 @@ function toNumber(value: unknown) {
 
   if (typeof value === "string") {
     const parsed = Number(value);
-
     return Number.isFinite(parsed) ? parsed : null;
   }
 
@@ -118,6 +196,53 @@ function pascalToMb(pa: number) {
 
 function roundOne(value: number | null) {
   return value === null ? null : Math.round(value * 10) / 10;
+}
+
+function roundWhole(value: number | null) {
+  return value === null ? null : Math.round(value);
+}
+
+function getDailyHighBucketLabel(tempF: number | null) {
+  if (tempF === null || !Number.isFinite(tempF)) {
+    return null;
+  }
+
+  const lower = Math.floor(tempF);
+  const upper = lower + 1;
+
+  return `${lower}° to ${upper}°`;
+}
+
+function getNeighborBucket(tempF: number | null, offset: number) {
+  if (tempF === null || !Number.isFinite(tempF)) {
+    return null;
+  }
+
+  const lower = Math.floor(tempF) + offset;
+  return `${lower}° to ${lower + 1}°`;
+}
+
+function uniqueStrings(values: Array<string | null>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+}
+
+function average(values: number[]) {
+  return values.length > 0
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : null;
+}
+
+function median(values: number[]) {
+  if (values.length === 0) {
+    return null;
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle];
 }
 
 function getLocalDateFromIso(timestamp: string, timezone: string) {
@@ -175,7 +300,6 @@ function getLocalHour(timestamp: string, timezone: string) {
   }).format(date);
 
   const hour = Number(hourText);
-
   return Number.isFinite(hour) ? hour : null;
 }
 
@@ -183,22 +307,14 @@ function getQuantitativeValueF(value: unknown) {
   const quantitative = value as Record<string, unknown> | undefined;
   const raw = toNumber(quantitative?.value);
 
-  if (raw === null) {
-    return null;
-  }
-
-  return celsiusToFahrenheit(raw);
+  return raw === null ? null : celsiusToFahrenheit(raw);
 }
 
 function getQuantitativeValueMph(value: unknown) {
   const quantitative = value as Record<string, unknown> | undefined;
   const raw = toNumber(quantitative?.value);
 
-  if (raw === null) {
-    return null;
-  }
-
-  return kmhToMph(raw);
+  return raw === null ? null : kmhToMph(raw);
 }
 
 function getQuantitativeValuePercent(value: unknown) {
@@ -212,13 +328,8 @@ function getQuantitativeValueDegrees(value: unknown) {
 }
 
 function getPressureMb(properties: Record<string, unknown>) {
-  const stationPressure = properties.stationPressure as
-    | Record<string, unknown>
-    | undefined;
-  const seaLevelPressure = properties.seaLevelPressure as
-    | Record<string, unknown>
-    | undefined;
-
+  const stationPressure = properties.stationPressure as Record<string, unknown> | undefined;
+  const seaLevelPressure = properties.seaLevelPressure as Record<string, unknown> | undefined;
   const raw = toNumber(stationPressure?.value ?? seaLevelPressure?.value);
 
   if (raw === null) {
@@ -241,8 +352,7 @@ function normalizeObservations(params: {
   const readings = features
     .map((feature) => {
       const properties = feature.properties as Record<string, unknown> | undefined;
-      const timestamp =
-        typeof properties?.timestamp === "string" ? properties.timestamp : null;
+      const timestamp = typeof properties?.timestamp === "string" ? properties.timestamp : null;
 
       if (!properties || !timestamp) {
         return null;
@@ -250,7 +360,6 @@ function normalizeObservations(params: {
 
       const localDate = getLocalDateFromIso(timestamp, timezone);
       const timeLocal = getLocalDateTimeLabel(timestamp, timezone);
-      const tempF = roundOne(getQuantitativeValueF(properties.temperature));
 
       if (!timeLocal) {
         return null;
@@ -260,40 +369,17 @@ function normalizeObservations(params: {
         timestamp,
         localDate,
         timeLocal,
-        tempF,
+        tempF: roundOne(getQuantitativeValueF(properties.temperature)),
         dewPointF: roundOne(getQuantitativeValueF(properties.dewpoint)),
-        humidityPercent: roundOne(
-          getQuantitativeValuePercent(properties.relativeHumidity)
-        ),
-        windDirectionDegrees: roundOne(
-          getQuantitativeValueDegrees(properties.windDirection)
-        ),
+        humidityPercent: roundOne(getQuantitativeValuePercent(properties.relativeHumidity)),
+        windDirectionDegrees: roundOne(getQuantitativeValueDegrees(properties.windDirection)),
         windSpeedMph: roundOne(getQuantitativeValueMph(properties.windSpeed)),
         windGustMph: roundOne(getQuantitativeValueMph(properties.windGust)),
-        cloudText:
-          typeof properties.textDescription === "string"
-            ? properties.textDescription
-            : null,
+        cloudText: typeof properties.textDescription === "string" ? properties.textDescription : null,
         pressureMb: roundOne(getPressureMb(properties)),
       };
     })
-    .filter(
-      (
-        reading
-      ): reading is {
-        timestamp: string;
-        localDate: string | null;
-        timeLocal: string;
-        tempF: number | null;
-        dewPointF: number | null;
-        humidityPercent: number | null;
-        windDirectionDegrees: number | null;
-        windSpeedMph: number | null;
-        windGustMph: number | null;
-        cloudText: string | null;
-        pressureMb: number | null;
-      } => reading !== null
-    )
+    .filter((reading): reading is NonNullable<typeof reading> => reading !== null)
     .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
 
   const eventDateReadings = readings.filter(
@@ -303,19 +389,20 @@ function normalizeObservations(params: {
   const latest = readings.at(-1) ?? null;
   const recent = readings.slice(-24).reverse();
 
-  const observedHighReading = eventDateReadings.reduce<
-    (typeof eventDateReadings)[number] | null
-  >((best, reading) => {
-    if (reading.tempF === null) {
+  const observedHighReading = eventDateReadings.reduce<(typeof eventDateReadings)[number] | null>(
+    (best, reading) => {
+      if (reading.tempF === null) {
+        return best;
+      }
+
+      if (!best || best.tempF === null || reading.tempF > best.tempF) {
+        return reading;
+      }
+
       return best;
-    }
-
-    if (!best || best.tempF === null || reading.tempF > best.tempF) {
-      return reading;
-    }
-
-    return best;
-  }, null);
+    },
+    null
+  );
 
   const lastHourReadings = readings.filter((reading) => {
     if (!latest) {
@@ -333,12 +420,11 @@ function normalizeObservations(params: {
     const last = lastHourReadings.at(-1)?.tempF ?? null;
 
     if (first !== null && last !== null) {
-      const computedTrendLastHourF = roundOne(last - first);
-      trendLastHourF = computedTrendLastHourF;
+      trendLastHourF = roundOne(last - first);
 
-      if (computedTrendLastHourF !== null && computedTrendLastHourF >= 1) {
+      if (trendLastHourF !== null && trendLastHourF >= 1) {
         trend = "rising";
-      } else if (computedTrendLastHourF !== null && computedTrendLastHourF <= -1) {
+      } else if (trendLastHourF !== null && trendLastHourF <= -1) {
         trend = "falling";
       } else {
         trend = "flat";
@@ -378,7 +464,6 @@ function getNwsDailyHighF(data: Record<string, unknown> | null, eventDate: strin
 
 function getNwsHourlyHigh(data: Record<string, unknown> | null, eventDate: string, timezone: string) {
   const periods = getNwsPeriods(data);
-
   const values = periods
     .map((period) => {
       const startTime = typeof period.startTime === "string" ? period.startTime : null;
@@ -397,10 +482,7 @@ function getNwsHourlyHigh(data: Record<string, unknown> | null, eventDate: strin
         timeLocal: getLocalDateTimeLabel(startTime, timezone),
       };
     })
-    .filter(
-      (value): value is { temp: number; timeLocal: string | null } =>
-        value !== null
-    );
+    .filter((value): value is { temp: number; timeLocal: string | null } => value !== null);
 
   if (values.length === 0) {
     return { high: null, timeLocal: null };
@@ -419,28 +501,35 @@ function getNwsHourlyHigh(data: Record<string, unknown> | null, eventDate: strin
 function getOpenMeteoArray(data: Record<string, unknown> | null, key: string) {
   const hourly = data?.hourly as Record<string, unknown> | undefined;
   const value = hourly?.[key];
-
   return Array.isArray(value) ? value : [];
 }
 
-function getOpenMeteoDailyHigh(data: Record<string, unknown> | null) {
+function getOpenMeteoDailyArray(data: Record<string, unknown> | null, key: string) {
   const daily = data?.daily as Record<string, unknown> | undefined;
-  const values = Array.isArray(daily?.temperature_2m_max)
-    ? daily.temperature_2m_max
-    : [];
+  const value = daily?.[key];
+  return Array.isArray(value) ? value : [];
+}
 
-  return toNumber(values[0]);
+function getOpenMeteoDailyHigh(data: Record<string, unknown> | null, eventDate?: string) {
+  const daily = data?.daily as Record<string, unknown> | undefined;
+  const times = Array.isArray(daily?.time) ? daily.time : [];
+  const values = getOpenMeteoDailyArray(data, "temperature_2m_max");
+
+  if (eventDate) {
+    const index = times.findIndex((time) => time === eventDate);
+    if (index >= 0) {
+      return roundOne(toNumber(values[index]));
+    }
+  }
+
+  return roundOne(toNumber(values[0]));
 }
 
 function getOpenMeteoHourlyHigh(data: Record<string, unknown> | null, eventDate: string) {
   const times = getOpenMeteoArray(data, "time");
   const temps = getOpenMeteoArray(data, "temperature_2m");
 
-  let best: {
-    index: number;
-    temp: number;
-    timeLocal: string;
-  } | null = null;
+  let best: { index: number; temp: number; timeLocal: string } | null = null;
 
   for (let index = 0; index < times.length; index += 1) {
     const time = typeof times[index] === "string" ? times[index] : null;
@@ -451,11 +540,7 @@ function getOpenMeteoHourlyHigh(data: Record<string, unknown> | null, eventDate:
     }
 
     if (!best || temp > best.temp) {
-      best = {
-        index,
-        temp,
-        timeLocal: time.replace("T", " "),
-      };
+      best = { index, temp, timeLocal: time.replace("T", " ") };
     }
   }
 
@@ -475,9 +560,291 @@ function getOpenMeteoValueAtIndex(
   return roundOne(toNumber(values[index]));
 }
 
+function getModelEvidence(
+  label: string,
+  data: Record<string, unknown> | null,
+  eventDate: string
+): ModelEvidence | null {
+  if (!data) {
+    return null;
+  }
+
+  const hourlyHigh = getOpenMeteoHourlyHigh(data, eventDate);
+  const dailyHigh = getOpenMeteoDailyHigh(data, eventDate);
+  const selectedHigh = hourlyHigh?.temp ?? dailyHigh;
+
+  return {
+    label,
+    dailyHighF: dailyHigh,
+    hourlyHighF: hourlyHigh?.temp ?? null,
+    hourlyHighTimeLocal: hourlyHigh?.timeLocal ?? null,
+    likelyBucket: getDailyHighBucketLabel(selectedHigh),
+    peakIndex: hourlyHigh?.index ?? null,
+    peakConditions: {
+      cloudCoverPercent: getOpenMeteoValueAtIndex(data, "cloud_cover", hourlyHigh?.index),
+      lowCloudCoverPercent: getOpenMeteoValueAtIndex(data, "cloud_cover_low", hourlyHigh?.index),
+      midCloudCoverPercent: getOpenMeteoValueAtIndex(data, "cloud_cover_mid", hourlyHigh?.index),
+      highCloudCoverPercent: getOpenMeteoValueAtIndex(data, "cloud_cover_high", hourlyHigh?.index),
+      windSpeedMph: getOpenMeteoValueAtIndex(data, "wind_speed_10m", hourlyHigh?.index),
+      windGustMph: getOpenMeteoValueAtIndex(data, "wind_gusts_10m", hourlyHigh?.index),
+      windDirectionDegrees: getOpenMeteoValueAtIndex(data, "wind_direction_10m", hourlyHigh?.index),
+      dewPointF: getOpenMeteoValueAtIndex(data, "dew_point_2m", hourlyHigh?.index),
+      humidityPercent: getOpenMeteoValueAtIndex(data, "relative_humidity_2m", hourlyHigh?.index),
+      shortwaveRadiation: getOpenMeteoValueAtIndex(data, "shortwave_radiation", hourlyHigh?.index),
+      sunshineDurationSeconds: getOpenMeteoValueAtIndex(data, "sunshine_duration", hourlyHigh?.index),
+      precipitationProbability: getOpenMeteoValueAtIndex(data, "precipitation_probability", hourlyHigh?.index),
+      thunderstormProbability: getOpenMeteoValueAtIndex(data, "thunderstorm_probability", hourlyHigh?.index),
+      cape: getOpenMeteoValueAtIndex(data, "cape", hourlyHigh?.index),
+      liftedIndex: getOpenMeteoValueAtIndex(data, "lifted_index", hourlyHigh?.index),
+      convectiveInhibition: getOpenMeteoValueAtIndex(data, "convective_inhibition", hourlyHigh?.index),
+      boundaryLayerHeightMeters: getOpenMeteoValueAtIndex(data, "boundary_layer_height", hourlyHigh?.index),
+      surfacePressure: getOpenMeteoValueAtIndex(data, "surface_pressure", hourlyHigh?.index),
+    },
+  };
+}
+
+function getEnsembleEvidence(data: Record<string, unknown> | null, eventDate: string): EnsembleEvidence | null {
+  const model = getModelEvidence("Open-Meteo ensemble mean", data, eventDate);
+
+  if (!model) {
+    return null;
+  }
+
+  const spread = getOpenMeteoValueAtIndex(data, "temperature_2m_spread", model.peakIndex);
+  const selectedHigh = model.hourlyHighF ?? model.dailyHighF;
+
+  return {
+    ...model,
+    temperatureSpreadFNearHigh: spread,
+    highRangeApproxF: {
+      low: selectedHigh !== null && spread !== null ? roundOne(selectedHigh - spread) : null,
+      high: selectedHigh !== null && spread !== null ? roundOne(selectedHigh + spread) : null,
+    },
+    uncertaintyBucket:
+      selectedHigh !== null && spread !== null
+        ? getDailyHighBucketLabel(selectedHigh + spread)
+        : null,
+  };
+}
+
+function parseNwsIntervalStart(validTime: unknown) {
+  if (typeof validTime !== "string") {
+    return null;
+  }
+
+  const start = validTime.split("/")[0];
+  return start || null;
+}
+
+function getNwsGridLayer(data: Record<string, unknown> | null, key: string) {
+  const properties = data?.properties as Record<string, unknown> | undefined;
+  const layer = properties?.[key] as Record<string, unknown> | undefined;
+  const values = Array.isArray(layer?.values)
+    ? (layer.values as Record<string, unknown>[])
+    : [];
+
+  return {
+    uom: typeof layer?.uom === "string" ? layer.uom : null,
+    values,
+  };
+}
+
+function convertGridValue(value: number, uom: string | null, kind: "temperature" | "wind" | "pressure" | "plain") {
+  const unit = uom?.toLowerCase() ?? "";
+
+  if (kind === "temperature") {
+    if (unit.includes("degf") || unit.endsWith(":degf")) {
+      return value;
+    }
+
+    return celsiusToFahrenheit(value);
+  }
+
+  if (kind === "wind") {
+    if (unit.includes("mi_h-1") || unit.includes("mph")) {
+      return value;
+    }
+
+    return kmhToMph(value);
+  }
+
+  if (kind === "pressure") {
+    return value > 2000 ? pascalToMb(value) : value;
+  }
+
+  return value;
+}
+
+function getNwsGridValueForTime(
+  data: Record<string, unknown> | null,
+  key: string,
+  timeLocal: string,
+  timezone: string,
+  kind: "temperature" | "wind" | "pressure" | "plain"
+) {
+  const layer = getNwsGridLayer(data, key);
+
+  for (const item of layer.values) {
+    const start = parseNwsIntervalStart(item.validTime);
+    const value = toNumber(item.value);
+
+    if (!start || value === null) {
+      continue;
+    }
+
+    if (getLocalDateTimeLabel(start, timezone) === timeLocal) {
+      return roundOne(convertGridValue(value, layer.uom, kind));
+    }
+  }
+
+  return null;
+}
+
+function getNwsGridMaxForDate(
+  data: Record<string, unknown> | null,
+  key: string,
+  eventDate: string,
+  timezone: string,
+  kind: "temperature" | "wind" | "pressure" | "plain"
+) {
+  const layer = getNwsGridLayer(data, key);
+  const values = layer.values
+    .map((item) => {
+      const start = parseNwsIntervalStart(item.validTime);
+      const value = toNumber(item.value);
+
+      if (!start || value === null) {
+        return null;
+      }
+
+      if (getLocalDateFromIso(start, timezone) !== eventDate) {
+        return null;
+      }
+
+      return {
+        value: roundOne(convertGridValue(value, layer.uom, kind)),
+        timeLocal: getLocalDateTimeLabel(start, timezone),
+        hourLocal: getLocalHour(start, timezone),
+      };
+    })
+    .filter(
+      (item): item is { value: number; timeLocal: string | null; hourLocal: number | null } =>
+        item !== null && item.value !== null
+    );
+
+  if (values.length === 0) {
+    return { value: null, timeLocal: null };
+  }
+
+  const best = values.reduce((currentBest, value) =>
+    value.value > currentBest.value ? value : currentBest
+  );
+
+  return { value: best.value, timeLocal: best.timeLocal };
+}
+
+function getNwsHazards(data: Record<string, unknown> | null, eventDate: string, timezone: string) {
+  const layer = getNwsGridLayer(data, "hazards");
+
+  return uniqueStrings(
+    layer.values
+      .map((item) => {
+        const start = parseNwsIntervalStart(item.validTime);
+
+        if (!start || getLocalDateFromIso(start, timezone) !== eventDate) {
+          return null;
+        }
+
+        const values = Array.isArray(item.value) ? item.value : [];
+        return values
+          .map((hazard) => {
+            if (!hazard || typeof hazard !== "object" || Array.isArray(hazard)) {
+              return null;
+            }
+
+            const record = hazard as Record<string, unknown>;
+            return [record.phenomenon, record.significance]
+              .filter((value): value is string => typeof value === "string")
+              .join(".");
+          })
+          .filter((value): value is string => Boolean(value));
+      })
+      .flat()
+  );
+}
+
+function getNwsWeatherSummary(data: Record<string, unknown> | null, eventDate: string, timezone: string) {
+  const layer = getNwsGridLayer(data, "weather");
+  const descriptions = uniqueStrings(
+    layer.values
+      .map((item) => {
+        const start = parseNwsIntervalStart(item.validTime);
+
+        if (!start || getLocalDateFromIso(start, timezone) !== eventDate) {
+          return null;
+        }
+
+        const values = Array.isArray(item.value) ? item.value : [];
+        return values.map((weather) => {
+          if (!weather || typeof weather !== "object" || Array.isArray(weather)) {
+            return null;
+          }
+
+          const record = weather as Record<string, unknown>;
+          return [record.coverage, record.intensity, record.weather]
+            .filter((value): value is string => typeof value === "string")
+            .join(" ")
+            .replaceAll("_", " ");
+        });
+      })
+      .flat()
+  );
+
+  return descriptions.length > 0 ? descriptions.slice(0, 4).join("; ") : null;
+}
+
+function getNwsPeakWindow(data: Record<string, unknown> | null, eventDate: string, timezone: string) {
+  const temperatureLayer = getNwsGridLayer(data, "temperature");
+  const maxTemperatureLayer = getNwsGridLayer(data, "maxTemperature");
+  const candidateTimes = uniqueStrings(
+    [...temperatureLayer.values, ...maxTemperatureLayer.values]
+      .map((item) => parseNwsIntervalStart(item.validTime))
+      .filter((start): start is string => Boolean(start))
+      .filter((start) => getLocalDateFromIso(start, timezone) === eventDate)
+      .filter((start) => {
+        const hour = getLocalHour(start, timezone);
+        return hour !== null && hour >= 10 && hour <= 20;
+      })
+      .map((start) => getLocalDateTimeLabel(start, timezone))
+  );
+
+  return candidateTimes.slice(0, 16).map((timeLocal) => ({
+    timeLocal,
+    temperatureF: getNwsGridValueForTime(data, "temperature", timeLocal, timezone, "temperature"),
+    maxTemperatureF: getNwsGridValueForTime(data, "maxTemperature", timeLocal, timezone, "temperature"),
+    dewPointF: getNwsGridValueForTime(data, "dewpoint", timeLocal, timezone, "temperature"),
+    relativeHumidityPercent: getNwsGridValueForTime(data, "relativeHumidity", timeLocal, timezone, "plain"),
+    skyCoverPercent: getNwsGridValueForTime(data, "skyCover", timeLocal, timezone, "plain"),
+    windDirectionDegrees: getNwsGridValueForTime(data, "windDirection", timeLocal, timezone, "plain"),
+    windSpeedMph: getNwsGridValueForTime(data, "windSpeed", timeLocal, timezone, "wind"),
+    windGustMph: getNwsGridValueForTime(data, "windGust", timeLocal, timezone, "wind"),
+    probabilityOfPrecipitationPercent: getNwsGridValueForTime(
+      data,
+      "probabilityOfPrecipitation",
+      timeLocal,
+      timezone,
+      "plain"
+    ),
+    probabilityOfThunderPercent: getNwsGridValueForTime(data, "probabilityOfThunder", timeLocal, timezone, "plain"),
+    pressureMb: getNwsGridValueForTime(data, "pressure", timeLocal, timezone, "pressure"),
+  }));
+}
+
 function getThunderstormRiskText(
   dailyForecast: Record<string, unknown> | null,
-  alerts: Record<string, unknown> | null
+  alerts: Record<string, unknown> | null,
+  nwsWeatherSummary: string | null,
+  thunderstormProbability: number | null
 ) {
   const periods = getNwsPeriods(dailyForecast);
   const periodText = periods
@@ -498,25 +865,21 @@ function getThunderstormRiskText(
     })
     .find((headline): headline is string => Boolean(headline));
 
-  return alertText ?? periodText ?? null;
+  if (thunderstormProbability !== null && thunderstormProbability >= 30) {
+    return `Open-Meteo thunderstorm probability near peak is ${thunderstormProbability}%.`;
+  }
+
+  return alertText ?? periodText ?? nwsWeatherSummary ?? null;
 }
 
-function getModelAgreement(params: {
-  nwsHourlyHighF: number | null;
-  openMeteoHourlyHighF: number | null;
-  nwsDailyHighF: number | null;
-  openMeteoDailyHighF: number | null;
-}) {
-  const nws = params.nwsHourlyHighF ?? params.nwsDailyHighF;
-  const openMeteo = params.openMeteoHourlyHighF ?? params.openMeteoDailyHighF;
-
-  if (nws === null || openMeteo === null) {
+function getModelAgreement(values: number[]) {
+  if (values.length < 2) {
     return "insufficient" as const;
   }
 
-  const spread = Math.abs(nws - openMeteo);
+  const spread = Math.max(...values) - Math.min(...values);
 
-  if (spread <= 1) {
+  if (spread <= 1.5) {
     return "strong" as const;
   }
 
@@ -527,11 +890,7 @@ function getModelAgreement(params: {
   return "weak" as const;
 }
 
-function getRemainingHeatingHours(params: {
-  eventDate: string;
-  timezone: string;
-  now: Date;
-}) {
+function getRemainingHeatingHours(params: { eventDate: string; timezone: string; now: Date }) {
   const today = getLocalDateFromIso(params.now.toISOString(), params.timezone);
 
   if (today !== params.eventDate) {
@@ -545,8 +904,123 @@ function getRemainingHeatingHours(params: {
   }
 
   const endHeatingHour = 18;
-
   return Math.max(0, endHeatingHour - currentHour);
+}
+
+function getRiskFromConditions(params: {
+  eventIsToday: boolean;
+  latestTempF: number | null;
+  observedHighF: number | null;
+  likelyTemperatureF: number | null;
+  trend: WeatherEvidenceTrend;
+  remainingHeatingHours: number | null;
+  precipitationProbability: number | null;
+  thunderstormProbability: number | null;
+  cloudCover: number | null;
+  modelAgreement: "strong" | "moderate" | "weak" | "insufficient";
+}) {
+  if (!params.eventIsToday || params.likelyTemperatureF === null) {
+    return {
+      overshootRisk: params.modelAgreement === "weak" ? "moderate" : "insufficient",
+      capRisk: params.modelAgreement === "weak" ? "moderate" : "insufficient",
+    } as const;
+  }
+
+  let overshootScore = 0;
+  let capScore = 0;
+
+  if (params.trend === "rising") overshootScore += 2;
+  if (params.trend === "falling") capScore += 2;
+  if ((params.remainingHeatingHours ?? 0) >= 2) overshootScore += 1;
+  if ((params.remainingHeatingHours ?? 0) <= 1) capScore += 1;
+
+  if (params.observedHighF !== null && params.likelyTemperatureF - params.observedHighF >= 1.5) {
+    overshootScore += 2;
+  }
+
+  if ((params.cloudCover ?? 0) >= 70) capScore += 1;
+  if ((params.precipitationProbability ?? 0) >= 40) capScore += 2;
+  if ((params.thunderstormProbability ?? 0) >= 25) capScore += 2;
+
+  return {
+    overshootRisk: overshootScore >= 4 ? "high" : overshootScore >= 2 ? "moderate" : "low",
+    capRisk: capScore >= 4 ? "high" : capScore >= 2 ? "moderate" : "low",
+  } as const;
+}
+
+function buildReasoning(params: {
+  observedHighF: number | null;
+  latestTempF: number | null;
+  trend: WeatherEvidenceTrend;
+  modelAgreement: "strong" | "moderate" | "weak" | "insufficient";
+  likelyBucket: string | null;
+  forecastSpreadF: number | null;
+  precipitationProbability: number | null;
+  thunderstormProbability: number | null;
+  cloudCover: number | null;
+  remainingHeatingHours: number | null;
+}) {
+  const supportiveFactors: string[] = [];
+  const limitingFactors: string[] = [];
+  const watchTriggers: string[] = [];
+  const invalidationSignals: string[] = [];
+
+  if (params.observedHighF !== null) {
+    supportiveFactors.push(`Official station observed high so far is ${params.observedHighF}°F.`);
+  }
+
+  if (params.latestTempF !== null) {
+    supportiveFactors.push(`Latest official station observation is ${params.latestTempF}°F.`);
+  }
+
+  if (params.trend === "rising") {
+    supportiveFactors.push("Recent official station trend is rising.");
+  } else if (params.trend === "falling") {
+    limitingFactors.push("Recent official station trend is falling.");
+  }
+
+  if (params.modelAgreement === "strong") {
+    supportiveFactors.push("Forecast sources have strong agreement.");
+  } else if (params.modelAgreement === "weak") {
+    limitingFactors.push("Forecast sources disagree by several degrees.");
+  }
+
+  if ((params.forecastSpreadF ?? 0) >= 3) {
+    limitingFactors.push(`Forecast spread is wide at about ${params.forecastSpreadF}°F.`);
+  }
+
+  if ((params.cloudCover ?? 0) >= 70) {
+    limitingFactors.push(`Cloud cover near peak heating is high at about ${params.cloudCover}%.`);
+  }
+
+  if ((params.precipitationProbability ?? 0) >= 40) {
+    limitingFactors.push(`Precipitation probability near peak heating is elevated at about ${params.precipitationProbability}%.`);
+  }
+
+  if ((params.thunderstormProbability ?? 0) >= 25) {
+    limitingFactors.push(`Thunderstorm probability near peak heating is elevated at about ${params.thunderstormProbability}%.`);
+  }
+
+  watchTriggers.push("Monitor the next official station observation and whether it makes a new event-date high.");
+  watchTriggers.push("Monitor NWS hourly forecast updates and Open-Meteo model refreshes for bucket shifts.");
+
+  if (params.likelyBucket) {
+    invalidationSignals.push(`A forecast/observation shift outside ${params.likelyBucket} weakens the current bucket read.`);
+  }
+
+  if (params.remainingHeatingHours !== null && params.remainingHeatingHours <= 1) {
+    watchTriggers.push("With little heating time left, each additional official observation becomes more decisive.");
+  }
+
+  return {
+    summary: params.likelyBucket
+      ? `Most structured evidence currently points toward ${params.likelyBucket}.`
+      : "The evidence packet does not yet identify a clear most-likely bucket.",
+    supportiveFactors,
+    limitingFactors,
+    watchTriggers,
+    invalidationSignals,
+  };
 }
 
 export function buildWeatherEvidencePacket(params: {
@@ -556,12 +1030,16 @@ export function buildWeatherEvidencePacket(params: {
   latitude: number;
   longitude: number;
   eventDate: string;
+  eventFamily?: "daily_high" | "hourly_temperature";
+  eventHourLocal?: number | null;
   nwsPoint: Record<string, unknown> | null;
   nwsDailyForecast: Record<string, unknown> | null;
   nwsHourlyForecast: Record<string, unknown> | null;
+  nwsGridpointData?: Record<string, unknown> | null;
   nwsObservations: Record<string, unknown> | null;
   nwsAlerts: Record<string, unknown> | null;
   openMeteo: Record<string, unknown> | null;
+  openMeteoEvidence?: OpenMeteoEvidenceForecasts | null;
   now?: Date;
 }): WeatherEvidencePacket {
   const now = params.now ?? new Date();
@@ -570,60 +1048,120 @@ export function buildWeatherEvidencePacket(params: {
   tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
   const tomorrow = tomorrowDate.toISOString().slice(0, 10);
 
+  const eventFamily = params.eventFamily ?? "daily_high";
   const observations = normalizeObservations({
     data: params.nwsObservations,
     eventDate: params.eventDate,
     timezone: params.timezone,
   });
 
-  const nwsDailyHighF = getNwsDailyHighF(
-    params.nwsDailyForecast,
+  const nwsDailyHighF = getNwsDailyHighF(params.nwsDailyForecast, params.eventDate, params.timezone);
+  const nwsHourlyHigh = getNwsHourlyHigh(params.nwsHourlyForecast, params.eventDate, params.timezone);
+  const nwsGridMax = getNwsGridMaxForDate(
+    params.nwsGridpointData ?? null,
+    "maxTemperature",
     params.eventDate,
-    params.timezone
+    params.timezone,
+    "temperature"
   );
-  const nwsHourlyHigh = getNwsHourlyHigh(
-    params.nwsHourlyForecast,
+  const nwsGridTemperatureMax = getNwsGridMaxForDate(
+    params.nwsGridpointData ?? null,
+    "temperature",
     params.eventDate,
-    params.timezone
-  );
-  const openMeteoDailyHighF = getOpenMeteoDailyHigh(params.openMeteo);
-  const openMeteoHourlyHigh = getOpenMeteoHourlyHigh(
-    params.openMeteo,
-    params.eventDate
+    params.timezone,
+    "temperature"
   );
 
-  const sourceHighs = [
+  const bestMatchData = params.openMeteoEvidence?.bestMatch ?? params.openMeteo;
+  const openMeteoDailyHighF = getOpenMeteoDailyHigh(bestMatchData, params.eventDate);
+  const openMeteoHourlyHigh = getOpenMeteoHourlyHigh(bestMatchData, params.eventDate);
+
+  const modelEvidence = {
+    bestMatch: getModelEvidence("Open-Meteo best match", bestMatchData, params.eventDate),
+    hrrr: getModelEvidence("Open-Meteo HRRR", params.openMeteoEvidence?.hrrr ?? null, params.eventDate),
+    nbm: getModelEvidence("Open-Meteo NBM", params.openMeteoEvidence?.nbm ?? null, params.eventDate),
+    gfs: getModelEvidence("Open-Meteo GFS", params.openMeteoEvidence?.gfs ?? null, params.eventDate),
+    ecmwf: getModelEvidence("Open-Meteo ECMWF IFS", params.openMeteoEvidence?.ecmwf ?? null, params.eventDate),
+    ensemble: getEnsembleEvidence(params.openMeteoEvidence?.ensemble ?? null, params.eventDate),
+  };
+
+  const allHighs = [
     nwsHourlyHigh.high,
     nwsDailyHighF,
-    openMeteoHourlyHigh?.temp ?? null,
-    openMeteoDailyHighF,
-  ].filter((value): value is number => value !== null);
+    nwsGridMax.value,
+    nwsGridTemperatureMax.value,
+    modelEvidence.bestMatch?.hourlyHighF ?? modelEvidence.bestMatch?.dailyHighF ?? null,
+    modelEvidence.hrrr?.hourlyHighF ?? modelEvidence.hrrr?.dailyHighF ?? null,
+    modelEvidence.nbm?.hourlyHighF ?? modelEvidence.nbm?.dailyHighF ?? null,
+    modelEvidence.gfs?.hourlyHighF ?? modelEvidence.gfs?.dailyHighF ?? null,
+    modelEvidence.ecmwf?.hourlyHighF ?? modelEvidence.ecmwf?.dailyHighF ?? null,
+    modelEvidence.ensemble?.hourlyHighF ?? modelEvidence.ensemble?.dailyHighF ?? null,
+  ].filter((value): value is number => value !== null && Number.isFinite(value));
 
-  const forecastHighAverageF =
-    sourceHighs.length > 0
-      ? roundOne(sourceHighs.reduce((sum, value) => sum + value, 0) / sourceHighs.length)
-      : null;
-
-  const forecastSpreadF =
-    sourceHighs.length > 1
-      ? roundOne(Math.max(...sourceHighs) - Math.min(...sourceHighs))
-      : null;
-
-  const modelAgreement = getModelAgreement({
-    nwsHourlyHighF: nwsHourlyHigh.high,
-    openMeteoHourlyHighF: openMeteoHourlyHigh?.temp ?? null,
-    nwsDailyHighF,
-    openMeteoDailyHighF,
-  });
-
+  const forecastHighAverageF = roundOne(average(allHighs));
+  const forecastHighMedianF = roundOne(median(allHighs));
+  const forecastSpreadF = allHighs.length > 1 ? roundOne(Math.max(...allHighs) - Math.min(...allHighs)) : null;
+  const modelAgreement = getModelAgreement(allHighs);
   const likelyTemperatureF =
-    forecastHighAverageF ??
+    forecastHighMedianF ??
     observations.observedHighReading?.tempF ??
     observations.latest?.tempF ??
     null;
 
-  const openMeteoHighIndex = openMeteoHourlyHigh?.index ?? null;
-  const latest = observations.latest;
+  const likelyBucket = getDailyHighBucketLabel(likelyTemperatureF);
+  const alternateBuckets = uniqueStrings([
+    getDailyHighBucketLabel(nwsHourlyHigh.high),
+    getDailyHighBucketLabel(nwsDailyHighF),
+    getDailyHighBucketLabel(nwsGridMax.value),
+    getDailyHighBucketLabel(openMeteoHourlyHigh?.temp ?? null),
+    getDailyHighBucketLabel(openMeteoDailyHighF),
+    modelEvidence.hrrr?.likelyBucket ?? null,
+    modelEvidence.nbm?.likelyBucket ?? null,
+    modelEvidence.gfs?.likelyBucket ?? null,
+    modelEvidence.ecmwf?.likelyBucket ?? null,
+    modelEvidence.ensemble?.likelyBucket ?? null,
+  ]);
+
+  const openMeteoHighIndex = openMeteoHourlyHigh?.index ?? modelEvidence.bestMatch?.peakIndex ?? null;
+  const peakWindow = getNwsPeakWindow(params.nwsGridpointData ?? null, params.eventDate, params.timezone);
+  const nwsHazards = getNwsHazards(params.nwsGridpointData ?? null, params.eventDate, params.timezone);
+  const nwsWeatherSummary = getNwsWeatherSummary(params.nwsGridpointData ?? null, params.eventDate, params.timezone);
+
+  const thunderstormProbability = getOpenMeteoValueAtIndex(bestMatchData, "thunderstorm_probability", openMeteoHighIndex);
+  const precipitationProbability = getOpenMeteoValueAtIndex(bestMatchData, "precipitation_probability", openMeteoHighIndex);
+  const cloudCover = getOpenMeteoValueAtIndex(bestMatchData, "cloud_cover", openMeteoHighIndex);
+  const remainingHeatingHours = getRemainingHeatingHours({ eventDate: params.eventDate, timezone: params.timezone, now });
+
+  const risks = getRiskFromConditions({
+    eventIsToday: today === params.eventDate,
+    latestTempF: observations.latest?.tempF ?? null,
+    observedHighF: observations.observedHighReading?.tempF ?? null,
+    likelyTemperatureF,
+    trend: observations.trend,
+    remainingHeatingHours,
+    precipitationProbability,
+    thunderstormProbability,
+    cloudCover,
+    modelAgreement,
+  });
+
+  const confidenceBase =
+    modelAgreement === "strong" ? 78 : modelAgreement === "moderate" ? 62 : modelAgreement === "weak" ? 42 : 25;
+  const spreadPenalty = forecastSpreadF !== null ? Math.min(20, Math.max(0, (forecastSpreadF - 1) * 5)) : 10;
+  const bucketConfidencePercent = Math.max(0, Math.min(95, Math.round(confidenceBase - spreadPenalty)));
+
+  const reasoning = buildReasoning({
+    observedHighF: observations.observedHighReading?.tempF ?? null,
+    latestTempF: observations.latest?.tempF ?? null,
+    trend: observations.trend,
+    modelAgreement,
+    likelyBucket,
+    forecastSpreadF,
+    precipitationProbability,
+    thunderstormProbability,
+    cloudCover,
+    remainingHeatingHours,
+  });
 
   const evidenceNotes: string[] = [];
 
@@ -633,29 +1171,39 @@ export function buildWeatherEvidencePacket(params: {
     );
   }
 
-  if (observations.trend !== "insufficient") {
-    evidenceNotes.push(
-      `Recent observation trend is ${observations.trend}${
-        observations.trendLastHourF !== null
-          ? ` (${observations.trendLastHourF >= 0 ? "+" : ""}${observations.trendLastHourF}°F over roughly the last hour)`
-          : ""
-      }.`
-    );
-  }
-
   if (nwsHourlyHigh.high !== null) {
     evidenceNotes.push(
       `NWS hourly forecast high is ${nwsHourlyHigh.high}°F${
         nwsHourlyHigh.timeLocal ? ` near ${nwsHourlyHigh.timeLocal}` : ""
-      }.`
+      }, pointing to ${getDailyHighBucketLabel(nwsHourlyHigh.high)}.`
+    );
+  }
+
+  if (nwsGridMax.value !== null) {
+    evidenceNotes.push(
+      `NWS raw grid maxTemperature is ${nwsGridMax.value}°F${
+        nwsGridMax.timeLocal ? ` near ${nwsGridMax.timeLocal}` : ""
+      }, pointing to ${getDailyHighBucketLabel(nwsGridMax.value)}.`
     );
   }
 
   if (openMeteoHourlyHigh?.temp !== undefined) {
     evidenceNotes.push(
-      `Open-Meteo hourly forecast high is ${openMeteoHourlyHigh.temp}°F near ${openMeteoHourlyHigh.timeLocal}.`
+      `Open-Meteo best-match hourly high is ${openMeteoHourlyHigh.temp}°F near ${openMeteoHourlyHigh.timeLocal}, pointing to ${getDailyHighBucketLabel(openMeteoHourlyHigh.temp)}.`
     );
   }
+
+  if (likelyBucket) {
+    evidenceNotes.push(
+      `Daily high bucket mapping uses floor-to-next-degree ranges: 93.5 means 93° to 94°, not an above-93.5 threshold. Current consensus points to ${likelyBucket}.`
+    );
+  }
+
+  const latest = observations.latest;
+  const currentTempVsObservedHighF =
+    latest?.tempF !== null && latest?.tempF !== undefined && observations.observedHighReading?.tempF !== null && observations.observedHighReading?.tempF !== undefined
+      ? roundOne(latest.tempF - observations.observedHighReading.tempF)
+      : null;
 
   return {
     station: {
@@ -666,21 +1214,22 @@ export function buildWeatherEvidencePacket(params: {
       longitude: params.longitude,
     },
     event: {
+      family: eventFamily,
       date: params.eventDate,
       localNow: getLocalDateTimeLabel(now.toISOString(), params.timezone),
       isToday: today === params.eventDate,
       isTomorrow: tomorrow === params.eventDate,
-      remainingHeatingHours: getRemainingHeatingHours({
-        eventDate: params.eventDate,
-        timezone: params.timezone,
-        now,
-      }),
+      isFuture: today !== null ? params.eventDate > today : false,
+      eventHourLocal: params.eventHourLocal ?? null,
+      remainingHeatingHours,
+      settlementAnchor: "official_station_observation",
     },
     observations: {
       latestTempF: latest?.tempF ?? null,
       latestObservationTimeLocal: latest?.timeLocal ?? null,
       observedHighF: observations.observedHighReading?.tempF ?? null,
       observedHighTimeLocal: observations.observedHighReading?.timeLocal ?? null,
+      currentTempVsObservedHighF,
       observationCountForEventDate: observations.eventDateReadings.length,
       recentReadings: observations.recent.map((reading) => ({
         timeLocal: reading.timeLocal,
@@ -700,120 +1249,112 @@ export function buildWeatherEvidencePacket(params: {
       nwsDailyHighF,
       nwsHourlyHighF: nwsHourlyHigh.high,
       nwsHourlyHighTimeLocal: nwsHourlyHigh.timeLocal,
+      nwsGridMaxTemperatureF: nwsGridMax.value,
+      nwsGridMaxTemperatureTimeLocal: nwsGridMax.timeLocal,
       openMeteoDailyHighF,
       openMeteoHourlyHighF: openMeteoHourlyHigh?.temp ?? null,
       openMeteoHourlyHighTimeLocal: openMeteoHourlyHigh?.timeLocal ?? null,
       forecastHighAverageF,
+      forecastHighMedianF,
       forecastSpreadF,
       modelAgreement,
       likelyTemperatureF,
+      likelyBucket,
+      alternateBuckets,
       alternateTemperatureRangeF: {
-        low: sourceHighs.length > 0 ? Math.min(...sourceHighs) : null,
-        high: sourceHighs.length > 0 ? Math.max(...sourceHighs) : null,
+        low: allHighs.length > 0 ? roundOne(Math.min(...allHighs)) : null,
+        high: allHighs.length > 0 ? roundOne(Math.max(...allHighs)) : null,
       },
     },
+    openMeteoModels: {
+      bestMatch: modelEvidence.bestMatch,
+      hrrr: modelEvidence.hrrr,
+      nbm: modelEvidence.nbm,
+      gfs: modelEvidence.gfs,
+      ecmwf: modelEvidence.ecmwf,
+      ensemble: modelEvidence.ensemble,
+      sourceErrors: params.openMeteoEvidence?.errors ?? [],
+    },
+    nwsGrid: {
+      updateTime:
+        typeof (params.nwsGridpointData?.properties as Record<string, unknown> | undefined)?.updateTime === "string"
+          ? ((params.nwsGridpointData?.properties as Record<string, unknown>).updateTime as string)
+          : null,
+      validTimes:
+        typeof (params.nwsGridpointData?.properties as Record<string, unknown> | undefined)?.validTimes === "string"
+          ? ((params.nwsGridpointData?.properties as Record<string, unknown>).validTimes as string)
+          : null,
+      rawMaxTemperatureF: nwsGridMax.value,
+      rawMaxTemperatureTimeLocal: nwsGridMax.timeLocal,
+      peakWindow,
+      hazards: nwsHazards,
+      weatherSummary: nwsWeatherSummary,
+    },
     atmosphere: {
-      cloudCoverPercentNearHigh: getOpenMeteoValueAtIndex(
-        params.openMeteo,
-        "cloud_cover",
-        openMeteoHighIndex
-      ),
-      windSpeedMphNearHigh: getOpenMeteoValueAtIndex(
-        params.openMeteo,
-        "wind_speed_10m",
-        openMeteoHighIndex
-      ),
-      windGustMphNearHigh: getOpenMeteoValueAtIndex(
-        params.openMeteo,
-        "wind_gusts_10m",
-        openMeteoHighIndex
-      ),
-      windDirectionDegreesNearHigh: getOpenMeteoValueAtIndex(
-        params.openMeteo,
-        "wind_direction_10m",
-        openMeteoHighIndex
-      ),
-      dewPointFNearHigh: getOpenMeteoValueAtIndex(
-        params.openMeteo,
-        "dew_point_2m",
-        openMeteoHighIndex
-      ),
-      humidityPercentNearHigh: getOpenMeteoValueAtIndex(
-        params.openMeteo,
-        "relative_humidity_2m",
-        openMeteoHighIndex
-      ),
-      shortwaveRadiationNearHigh: getOpenMeteoValueAtIndex(
-        params.openMeteo,
-        "shortwave_radiation",
-        openMeteoHighIndex
-      ),
-      precipitationProbabilityNearHigh: getOpenMeteoValueAtIndex(
-        params.openMeteo,
-        "precipitation_probability",
-        openMeteoHighIndex
-      ),
+      cloudCoverPercentNearHigh: cloudCover,
+      lowCloudCoverPercentNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "cloud_cover_low", openMeteoHighIndex),
+      midCloudCoverPercentNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "cloud_cover_mid", openMeteoHighIndex),
+      highCloudCoverPercentNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "cloud_cover_high", openMeteoHighIndex),
+      windSpeedMphNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "wind_speed_10m", openMeteoHighIndex),
+      windGustMphNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "wind_gusts_10m", openMeteoHighIndex),
+      windDirectionDegreesNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "wind_direction_10m", openMeteoHighIndex),
+      dewPointFNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "dew_point_2m", openMeteoHighIndex),
+      humidityPercentNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "relative_humidity_2m", openMeteoHighIndex),
+      shortwaveRadiationNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "shortwave_radiation", openMeteoHighIndex),
+      sunshineDurationSecondsNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "sunshine_duration", openMeteoHighIndex),
+      precipitationProbabilityNearHigh: precipitationProbability,
+      thunderstormProbabilityNearHigh: thunderstormProbability,
+      capeNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "cape", openMeteoHighIndex),
+      liftedIndexNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "lifted_index", openMeteoHighIndex),
+      convectiveInhibitionNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "convective_inhibition", openMeteoHighIndex),
+      boundaryLayerHeightMetersNearHigh: getOpenMeteoValueAtIndex(bestMatchData, "boundary_layer_height", openMeteoHighIndex),
       thunderstormRiskText: getThunderstormRiskText(
         params.nwsDailyForecast,
-        params.nwsAlerts
+        params.nwsAlerts,
+        nwsWeatherSummary,
+        thunderstormProbability
       ),
       latestCloudText: latest?.cloudText ?? null,
       latestWindSpeedMph: latest?.windSpeedMph ?? null,
       latestWindGustMph: latest?.windGustMph ?? null,
       latestHumidityPercent: latest?.humidityPercent ?? null,
     },
+    bucketAnalysis: {
+      mostLikelyBucket: likelyBucket,
+      secondMostLikelyBucket: alternateBuckets.find((bucket) => bucket !== likelyBucket) ?? null,
+      hotTailBucket: getNeighborBucket(likelyTemperatureF, 1),
+      coolTailBucket: getNeighborBucket(likelyTemperatureF, -1),
+      bucketConfidencePercent,
+      overshootRisk: risks.overshootRisk,
+      capRisk: risks.capRisk,
+    },
+    reasoning,
     rawSources: {
       nwsPoint: params.nwsPoint,
       nwsDailyForecast: params.nwsDailyForecast,
       nwsHourlyForecast: params.nwsHourlyForecast,
+      nwsGridpointData: params.nwsGridpointData ?? null,
       nwsAlerts: params.nwsAlerts,
       openMeteo: params.openMeteo,
+      openMeteoEvidence: params.openMeteoEvidence ?? null,
     },
     evidenceNotes,
   };
 }
 
-export async function fetchWeatherEvidencePacket(params: {
-  stationId: string;
-  stationName?: string | null;
-  timezone: string;
-  latitude: number;
-  longitude: number;
-  eventDate: string;
-}) {
-  const point = await getNwsPoint(params.latitude, params.longitude);
-  const pointProperties = point.properties as Record<string, unknown> | undefined;
+export function sanitizeWeatherEvidenceForClient(packet: WeatherEvidencePacket) {
+  const { rawSources, ...safePacket } = packet;
 
-  const forecastUrl =
-    typeof pointProperties?.forecast === "string" ? pointProperties.forecast : null;
-
-  const [dailyForecast, hourlyForecast, observations, alerts, openMeteo] =
-    await Promise.all([
-      forecastUrl ? getNwsForecastFromUrl(forecastUrl) : Promise.resolve(null),
-      getNwsHourlyForecastFromPoint(point),
-      getNwsStationObservations(params.stationId),
-      getNwsAlerts(params.latitude, params.longitude),
-      getOpenMeteoForecast({
-        latitude: params.latitude,
-        longitude: params.longitude,
-        timezone: params.timezone,
-        startDate: params.eventDate,
-        endDate: params.eventDate,
-      }),
-    ]);
-
-  return buildWeatherEvidencePacket({
-    stationId: params.stationId,
-    stationName: params.stationName ?? null,
-    timezone: params.timezone,
-    latitude: params.latitude,
-    longitude: params.longitude,
-    eventDate: params.eventDate,
-    nwsPoint: point,
-    nwsDailyForecast: dailyForecast,
-    nwsHourlyForecast: hourlyForecast,
-    nwsObservations: observations,
-    nwsAlerts: alerts,
-    openMeteo,
-  });
+  return {
+    ...safePacket,
+    rawSources: {
+      nwsPoint: rawSources.nwsPoint ? "available" : null,
+      nwsDailyForecast: rawSources.nwsDailyForecast ? "available" : null,
+      nwsHourlyForecast: rawSources.nwsHourlyForecast ? "available" : null,
+      nwsGridpointData: rawSources.nwsGridpointData ? "available" : null,
+      nwsAlerts: rawSources.nwsAlerts ? "available" : null,
+      openMeteo: rawSources.openMeteo ? "available" : null,
+      openMeteoEvidence: rawSources.openMeteoEvidence ? "available" : null,
+    },
+  };
 }
