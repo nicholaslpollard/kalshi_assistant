@@ -62,6 +62,123 @@ function readString(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+
+function readWeight(value: unknown) {
+  return value === "very_high" ||
+    value === "high" ||
+    value === "medium_high" ||
+    value === "medium" ||
+    value === "low" ||
+    value === "context"
+    ? value
+    : "context";
+}
+
+function readUrgency(value: unknown) {
+  return value === "high" || value === "medium" || value === "low" ? value : "medium";
+}
+
+function validateModelConsensus(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const row = getNestedObject(item);
+      if (!row) {
+        return null;
+      }
+
+      return {
+        source: readString(row.source, "Unknown source"),
+        forecastHighF: toNumberOrNull(row.forecastHighF),
+        bucket: typeof row.bucket === "string" ? row.bucket : null,
+        weight: readWeight(row.weight),
+        notes: readString(row.notes, "No source notes provided."),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+}
+
+function validateBucketProbabilities(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const row = getNestedObject(item);
+      if (!row) {
+        return null;
+      }
+
+      const probabilityPercent = toNumberOrNull(row.probabilityPercent);
+
+      return {
+        bucket: readString(row.bucket, "Unknown bucket"),
+        probabilityPercent:
+          probabilityPercent === null ? 0 : Math.max(0, Math.min(100, probabilityPercent)),
+        fairValueEstimate: toNumberOrNull(row.fairValueEstimate),
+        reasoning: readString(row.reasoning, "No bucket probability reasoning provided."),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+}
+
+function validateFairValue(value: unknown) {
+  const read = getNestedObject(value);
+
+  return {
+    modelImpliedProbabilityPercent: toNumberOrNull(read?.modelImpliedProbabilityPercent),
+    fairYesPrice: toNumberOrNull(read?.fairYesPrice),
+    currentYesAsk: toNumberOrNull(read?.currentYesAsk),
+    currentYesBid: toNumberOrNull(read?.currentYesBid),
+    edgeCents: toNumberOrNull(read?.edgeCents),
+    maxEntryPrice: toNumberOrNull(read?.maxEntryPrice),
+    priceDiscipline: readString(read?.priceDiscipline, "No price-discipline read was provided."),
+  };
+}
+
+function validateObservationTriggers(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const trigger = getNestedObject(item);
+      if (!trigger) {
+        return null;
+      }
+
+      return {
+        trigger: readString(trigger.trigger, "Unspecified trigger"),
+        action: readString(trigger.action, "Reassess the market."),
+        urgency: readUrgency(trigger.urgency),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+}
+
+function validateSettlementClock(value: unknown) {
+  const read = getNestedObject(value);
+
+  return {
+    localTimeNow: typeof read?.localTimeNow === "string" ? read.localTimeNow : null,
+    remainingHeatingWindow: readString(
+      read?.remainingHeatingWindow,
+      "No remaining-heating-window read was provided."
+    ),
+    peakHeatingPassed:
+      typeof read?.peakHeatingPassed === "boolean" ? read.peakHeatingPassed : null,
+    settlementTimingRead: readString(
+      read?.settlementTimingRead,
+      "No settlement timing read was provided."
+    ),
+  };
+}
+
 function validateIndependentForecast(value: unknown) {
   const forecast = getNestedObject(value);
 
@@ -152,6 +269,15 @@ function validateAiReview(value: unknown): PositionAiReviewResult {
     rollCase: typeof review.rollCase === "string" ? review.rollCase : null,
     whatWouldChangeMyMind: toStringArray(review.whatWouldChangeMyMind),
     recommendedMonitoring: toStringArray(review.recommendedMonitoring),
+    modelConsensus: validateModelConsensus(review.modelConsensus),
+    bucketProbabilities: validateBucketProbabilities(review.bucketProbabilities),
+    fairValue: validateFairValue(review.fairValue),
+    observationTriggers: validateObservationTriggers(review.observationTriggers),
+    settlementClock: validateSettlementClock(review.settlementClock),
+    forecastChangeRead: readString(
+      review.forecastChangeRead,
+      "No forecast-change read was provided."
+    ),
   };
 }
 
@@ -185,6 +311,9 @@ You return only valid JSON matching the requested schema.
       "If the held bucket is currently winning, focus on overshoot risk and whether selling, holding, trimming, or hedging/rolling is better.",
       "If a neighboring bucket is becoming more likely, explain whether to roll fully or hedge partially and what observation would confirm it.",
       "For future positions, use NWS daily/hourly/gridpoint forecast, Open-Meteo best-match/HRRR/NBM/GFS/ECMWF forecast, ensemble mean/spread, model agreement, forecast spread, and market pricing as primary evidence.",
+      "Build a compact model-consensus table that weights official station observations highest for same-day markets, HRRR/NBM/NWS hourly strongly for near-term markets, and NWS grid/ECMWF/ensemble spread strongly for tomorrow/future markets.",
+      "Return a bucket probability distribution across the most realistic buckets, a fair-value estimate, and price discipline. A good forecast is not a good trade if the ask is above fair value.",
+      "Include advisory observation triggers and settlement-clock logic: remaining heating window, peak-heating status, and what exact print/model/price condition changes the action.",
       "Do not simply repeat the deterministic review. You may agree or disagree with it based on the evidence packet.",
       "Use concrete observation triggers whenever possible, such as: if the next print is 91°F, roll; if two more prints stay 89°F, hold/sell the hedge.",
     ],
@@ -223,6 +352,47 @@ You return only valid JSON matching the requested schema.
       rollCase: "plain-English roll or hedge discussion, including target/hedge bucket and trigger; null if not relevant",
       whatWouldChangeMyMind: ["specific condition that would change recommendation"],
       recommendedMonitoring: ["specific data to monitor next"],
+      modelConsensus: [
+        {
+          source: "NWS daily | NWS hourly | NWS grid | Station observations | Open-Meteo Best Match | HRRR | NBM | GFS | ECMWF | Ensemble",
+          forecastHighF: "number or null",
+          bucket: "daily high bucket as true range, such as 93° to 94°, or null",
+          weight: "very_high | high | medium_high | medium | low | context",
+          notes: "what this source contributes and any caveat",
+        },
+      ],
+      bucketProbabilities: [
+        {
+          bucket: "bucket label, such as 91° to 92°",
+          probabilityPercent: "estimated probability from 0 to 100",
+          fairValueEstimate: "fair YES price as decimal dollars, e.g. 0.42, or null",
+          reasoning: "why this bucket has this probability",
+        },
+      ],
+      fairValue: {
+        modelImpliedProbabilityPercent: "number from 0 to 100 or null",
+        fairYesPrice: "decimal dollars 0 to 1 or null",
+        currentYesAsk: "decimal dollars 0 to 1 or null",
+        currentYesBid: "decimal dollars 0 to 1 or null",
+        edgeCents: "fair value minus current ask in cents, or null",
+        maxEntryPrice: "maximum reasonable YES entry in decimal dollars or null",
+        priceDiscipline: "explain whether the forecast is good but price is bad, or forecast and price both support entry/hold",
+      },
+      observationTriggers: [
+        {
+          trigger: "specific observation/model/price condition",
+          action: "what manual action to consider",
+          urgency: "low | medium | high",
+        },
+      ],
+      settlementClock: {
+        localTimeNow: "string or null",
+        remainingHeatingWindow: "plain-English heating-window read",
+        peakHeatingPassed: "boolean or null",
+        settlementTimingRead: "how timing affects hold/sell/enter decision",
+      },
+      forecastChangeRead: "explain whether forecasts/models appear to be warming, cooling, stable, converging, diverging, or unavailable based on the packet",
+
     },
     deterministicReview,
     position,

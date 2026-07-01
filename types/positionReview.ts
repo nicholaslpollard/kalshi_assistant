@@ -1,3 +1,42 @@
+
+export type AiModelConsensusRow = {
+  source: string;
+  forecastHighF: number | null;
+  bucket: string | null;
+  weight: "very_high" | "high" | "medium_high" | "medium" | "low" | "context";
+  notes: string;
+};
+
+export type AiBucketProbability = {
+  bucket: string;
+  probabilityPercent: number;
+  fairValueEstimate: number | null;
+  reasoning: string;
+};
+
+export type AiFairValueRead = {
+  modelImpliedProbabilityPercent: number | null;
+  fairYesPrice: number | null;
+  currentYesAsk: number | null;
+  currentYesBid: number | null;
+  edgeCents: number | null;
+  maxEntryPrice: number | null;
+  priceDiscipline: string;
+};
+
+export type AiObservationTrigger = {
+  trigger: string;
+  action: string;
+  urgency: "low" | "medium" | "high";
+};
+
+export type AiSettlementClockRead = {
+  localTimeNow: string | null;
+  remainingHeatingWindow: string;
+  peakHeatingPassed: boolean | null;
+  settlementTimingRead: string;
+};
+
 export type PositionReviewAction =
   | "HOLD"
   | "WATCH_CLOSELY"
@@ -100,4 +139,10 @@ export type PositionAiReviewResult = {
   rollCase: string | null;
   whatWouldChangeMyMind: string[];
   recommendedMonitoring: string[];
+  modelConsensus: AiModelConsensusRow[];
+  bucketProbabilities: AiBucketProbability[];
+  fairValue: AiFairValueRead;
+  observationTriggers: AiObservationTrigger[];
+  settlementClock: AiSettlementClockRead;
+  forecastChangeRead: string;
 };

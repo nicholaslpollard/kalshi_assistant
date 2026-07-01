@@ -119,6 +119,33 @@ export type WeatherEvidencePacket = {
     overshootRisk: "high" | "moderate" | "low" | "insufficient";
     capRisk: "high" | "moderate" | "low" | "insufficient";
   };
+  decisionSupport: {
+    modelConsensus: Array<{
+      source: string;
+      forecastHighF: number | null;
+      bucket: string | null;
+      weight: "very_high" | "high" | "medium_high" | "medium" | "low" | "context";
+      notes: string;
+    }>;
+    bucketProbabilities: Array<{
+      bucket: string;
+      probabilityPercent: number;
+      fairValueEstimate: number | null;
+      reasoning: string;
+    }>;
+    observationTriggers: Array<{
+      trigger: string;
+      action: string;
+      urgency: "low" | "medium" | "high";
+    }>;
+    settlementClock: {
+      localTimeNow: string | null;
+      remainingHeatingWindow: string;
+      peakHeatingPassed: boolean | null;
+      settlementTimingRead: string;
+    };
+    forecastChangeRead: string;
+  };
   reasoning: {
     summary: string;
     supportiveFactors: string[];
@@ -220,6 +247,101 @@ function getNeighborBucket(tempF: number | null, offset: number) {
 
   const lower = Math.floor(tempF) + offset;
   return `${lower}° to ${lower + 1}°`;
+}
+
+
+function normalizeProbabilityDistribution(raw: Array<{ bucket: string | null; weight: number; reasoning: string }>) {
+  const merged = new Map<string, { bucket: string; weight: number; reasoning: string[] }>();
+
+  for (const item of raw) {
+    if (!item.bucket || item.weight <= 0) {
+      continue;
+    }
+
+    const existing = merged.get(item.bucket);
+    if (existing) {
+      existing.weight += item.weight;
+      existing.reasoning.push(item.reasoning);
+    } else {
+      merged.set(item.bucket, {
+        bucket: item.bucket,
+        weight: item.weight,
+        reasoning: [item.reasoning],
+      });
+    }
+  }
+
+  const total = Array.from(merged.values()).reduce((sum, item) => sum + item.weight, 0);
+
+  if (total <= 0) {
+    return [];
+  }
+
+  return Array.from(merged.values())
+    .map((item) => {
+      const probabilityPercent = Math.round((item.weight / total) * 100);
+      return {
+        bucket: item.bucket,
+        probabilityPercent,
+        fairValueEstimate: Math.round((probabilityPercent / 100) * 100) / 100,
+        reasoning: item.reasoning.join(" "),
+      };
+    })
+    .sort((a, b) => b.probabilityPercent - a.probabilityPercent);
+}
+
+function buildSettlementClockRead(params: {
+  localNow: string | null;
+  remainingHeatingHours: number | null;
+  isToday: boolean;
+  isFuture: boolean;
+}) {
+  const { localNow, remainingHeatingHours, isToday, isFuture } = params;
+
+  if (isFuture) {
+    return {
+      localTimeNow: localNow,
+      remainingHeatingWindow: "Future event; same-day heating window has not started.",
+      peakHeatingPassed: false,
+      settlementTimingRead:
+        "Use model agreement, model spread, and forecast trend as primary evidence until same-day observations begin.",
+    };
+  }
+
+  if (!isToday) {
+    return {
+      localTimeNow: localNow,
+      remainingHeatingWindow: "Event is not marked as today; heating-window read is contextual only.",
+      peakHeatingPassed: null,
+      settlementTimingRead:
+        "Verify the event date and settlement rules before treating current observations as decisive.",
+    };
+  }
+
+  if (remainingHeatingHours === null) {
+    return {
+      localTimeNow: localNow,
+      remainingHeatingWindow: "Remaining heating window could not be estimated.",
+      peakHeatingPassed: null,
+      settlementTimingRead:
+        "Use latest official station observations and model timing before acting.",
+    };
+  }
+
+  return {
+    localTimeNow: localNow,
+    remainingHeatingWindow:
+      remainingHeatingHours > 0
+        ? `About ${remainingHeatingHours.toFixed(1)} hours of realistic heating remain.`
+        : "The main heating window has likely passed or is nearly over.",
+    peakHeatingPassed: remainingHeatingHours <= 0,
+    settlementTimingRead:
+      remainingHeatingHours > 2
+        ? "Overshoot and further heating remain live risks."
+        : remainingHeatingHours > 0
+          ? "Late movement is still possible, but every capped observation increases confidence in the current high."
+          : "Observed high and official late-day prints should dominate the read now.",
+  };
 }
 
 function uniqueStrings(values: Array<string | null>) {
@@ -1199,6 +1321,146 @@ export function buildWeatherEvidencePacket(params: {
     );
   }
 
+  const localNowLabel = getLocalDateTimeLabel(now.toISOString(), params.timezone);
+
+  const modelConsensus = [
+    {
+      source: "Station observations",
+      forecastHighF: observations.observedHighReading?.tempF ?? null,
+      bucket: getDailyHighBucketLabel(observations.observedHighReading?.tempF ?? null),
+      weight: params.eventDate === today ? "very_high" as const : "context" as const,
+      notes:
+        observations.observedHighReading?.tempF !== null && observations.observedHighReading
+          ? "Official station observations are the live settlement anchor for same-day markets."
+          : "No event-date station high is available yet.",
+    },
+    {
+      source: "NWS daily",
+      forecastHighF: nwsDailyHighF,
+      bucket: getDailyHighBucketLabel(nwsDailyHighF),
+      weight: "high" as const,
+      notes: "Official public NWS forecast high.",
+    },
+    {
+      source: "NWS hourly",
+      forecastHighF: nwsHourlyHigh.high,
+      bucket: getDailyHighBucketLabel(nwsHourlyHigh.high),
+      weight: "high" as const,
+      notes: nwsHourlyHigh.timeLocal
+        ? `Hourly NWS peak near ${nwsHourlyHigh.timeLocal}.`
+        : "NWS hourly peak timing unavailable.",
+    },
+    {
+      source: "NWS grid",
+      forecastHighF: nwsGridMax.value,
+      bucket: getDailyHighBucketLabel(nwsGridMax.value),
+      weight: "medium_high" as const,
+      notes: "Raw NWS gridpoint maxTemperature guidance.",
+    },
+    {
+      source: "Open-Meteo Best Match",
+      forecastHighF: modelEvidence.bestMatch?.hourlyHighF ?? openMeteoHourlyHigh?.temp ?? openMeteoDailyHighF,
+      bucket: getDailyHighBucketLabel(modelEvidence.bestMatch?.hourlyHighF ?? openMeteoHourlyHigh?.temp ?? openMeteoDailyHighF),
+      weight: "medium_high" as const,
+      notes: "Open-Meteo blended best-match model guidance.",
+    },
+    {
+      source: "HRRR",
+      forecastHighF: modelEvidence.hrrr?.hourlyHighF ?? null,
+      bucket: modelEvidence.hrrr?.likelyBucket ?? null,
+      weight: params.eventDate === today ? "high" as const : "medium" as const,
+      notes: "Rapid-refresh short-term guidance when available.",
+    },
+    {
+      source: "NBM",
+      forecastHighF: modelEvidence.nbm?.hourlyHighF ?? null,
+      bucket: modelEvidence.nbm?.likelyBucket ?? null,
+      weight: "high" as const,
+      notes: "National Blend of Models guidance for the event location.",
+    },
+    {
+      source: "GFS",
+      forecastHighF: modelEvidence.gfs?.hourlyHighF ?? null,
+      bucket: modelEvidence.gfs?.likelyBucket ?? null,
+      weight: "medium" as const,
+      notes: "Global model guidance; useful for broader trend confirmation.",
+    },
+    {
+      source: "ECMWF",
+      forecastHighF: modelEvidence.ecmwf?.hourlyHighF ?? null,
+      bucket: modelEvidence.ecmwf?.likelyBucket ?? null,
+      weight: "medium_high" as const,
+      notes: "Independent global model confirmation or disagreement.",
+    },
+    {
+      source: "Ensemble",
+      forecastHighF: modelEvidence.ensemble?.hourlyHighF ?? null,
+      bucket: modelEvidence.ensemble?.likelyBucket ?? null,
+      weight: "context" as const,
+      notes:
+        modelEvidence.ensemble?.temperatureSpreadFNearHigh !== null && modelEvidence.ensemble?.temperatureSpreadFNearHigh !== undefined
+          ? `Ensemble spread near high is ${modelEvidence.ensemble.temperatureSpreadFNearHigh}°F.`
+          : "Ensemble spread unavailable; use as contextual evidence only.",
+    },
+  ].filter((row) => row.forecastHighF !== null || row.bucket !== null);
+
+  const bucketProbabilities = normalizeProbabilityDistribution([
+    {
+      bucket: likelyBucket,
+      weight: bucketConfidencePercent ?? 0,
+      reasoning: "Primary consensus bucket from weighted NWS/Open-Meteo evidence.",
+    },
+    {
+      bucket: getNeighborBucket(likelyTemperatureF, 1),
+      weight: risks.overshootRisk === "high" ? 28 : risks.overshootRisk === "moderate" ? 18 : 8,
+      reasoning: "Hot-tail/overshoot bucket based on remaining heating, model spread, and storm/cap risk.",
+    },
+    {
+      bucket: getNeighborBucket(likelyTemperatureF, -1),
+      weight: risks.capRisk === "high" ? 28 : risks.capRisk === "moderate" ? 18 : 8,
+      reasoning: "Cool-tail/cap-risk bucket based on clouds, precipitation, thunder risk, and weak heating support.",
+    },
+    ...alternateBuckets.map((bucket) => ({
+      bucket,
+      weight: 10,
+      reasoning: "Alternate bucket from disagreement among forecast sources.",
+    })),
+  ]);
+
+  const observationTriggers = [
+    {
+      trigger: "Official station prints a temperature inside the hot-tail bucket.",
+      action: "Reassess immediately for hedge/roll or avoid chasing if price has already corrected.",
+      urgency: "high" as const,
+    },
+    {
+      trigger: "Two consecutive official observations remain capped below the likely bucket while heating time is running out.",
+      action: "Increase confidence in the cooler/current bucket and consider trimming weak hot-tail exposure.",
+      urgency: "medium" as const,
+    },
+    {
+      trigger: "Updated HRRR/NBM/NWS hourly guidance shifts by at least 1°F into a neighboring bucket.",
+      action: "Recompute fair value and compare the new target basket to current ask before entering.",
+      urgency: "medium" as const,
+    },
+  ];
+
+  const settlementClock = buildSettlementClockRead({
+    localNow: localNowLabel,
+    remainingHeatingHours,
+    isToday: today === params.eventDate,
+    isFuture: today !== null ? params.eventDate > today : false,
+  });
+
+  const forecastChangeRead =
+    forecastSpreadF === null
+      ? "Forecast-change read is unavailable because too few model sources returned usable highs."
+      : forecastSpreadF <= 1.5
+        ? "Models are tightly clustered; bucket confidence should be driven more by price and live observations."
+        : forecastSpreadF <= 3
+          ? "Models show moderate spread; keep neighboring buckets live and avoid overpaying for one outcome."
+          : "Models are widely spread; treat the bucket read as unstable until guidance converges.";
+
   const latest = observations.latest;
   const currentTempVsObservedHighF =
     latest?.tempF !== null && latest?.tempF !== undefined && observations.observedHighReading?.tempF !== null && observations.observedHighReading?.tempF !== undefined
@@ -1216,7 +1478,7 @@ export function buildWeatherEvidencePacket(params: {
     event: {
       family: eventFamily,
       date: params.eventDate,
-      localNow: getLocalDateTimeLabel(now.toISOString(), params.timezone),
+      localNow: localNowLabel,
       isToday: today === params.eventDate,
       isTomorrow: tomorrow === params.eventDate,
       isFuture: today !== null ? params.eventDate > today : false,

@@ -114,6 +114,41 @@ type EventAiReview = {
   risks: string[];
   whatWouldChangeMyMind: string[];
   recommendedMonitoring: string[];
+
+  modelConsensus?: Array<{
+    source: string;
+    forecastHighF: number | null;
+    bucket: string | null;
+    weight: "very_high" | "high" | "medium_high" | "medium" | "low" | "context";
+    notes: string;
+  }>;
+  bucketProbabilities?: Array<{
+    bucket: string;
+    probabilityPercent: number;
+    fairValueEstimate: number | null;
+    reasoning: string;
+  }>;
+  fairValue?: {
+    modelImpliedProbabilityPercent: number | null;
+    fairYesPrice: number | null;
+    currentYesAsk: number | null;
+    currentYesBid: number | null;
+    edgeCents: number | null;
+    maxEntryPrice: number | null;
+    priceDiscipline: string;
+  };
+  observationTriggers?: Array<{
+    trigger: string;
+    action: string;
+    urgency: "low" | "medium" | "high";
+  }>;
+  settlementClock?: {
+    localTimeNow: string | null;
+    remainingHeatingWindow: string;
+    peakHeatingPassed: boolean | null;
+    settlementTimingRead: string;
+  };
+  forecastChangeRead?: string;
 };
 
 type EventScannerResult = {
@@ -518,6 +553,138 @@ function MatchingPositionPanel({
 }
 
 
+
+function ModelConsensusPanel({
+  rows,
+}: {
+  rows?: NonNullable<EventAiReview["modelConsensus"]>;
+}) {
+  if (!rows || rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+      <h4 className="font-semibold text-white">Model consensus</h4>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="text-[#a8b3ad]">
+            <tr>
+              <th className="border-b border-[#1f2a24] px-3 py-2">Source</th>
+              <th className="border-b border-[#1f2a24] px-3 py-2">High</th>
+              <th className="border-b border-[#1f2a24] px-3 py-2">Bucket</th>
+              <th className="border-b border-[#1f2a24] px-3 py-2">Weight</th>
+              <th className="border-b border-[#1f2a24] px-3 py-2">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.source}-${index}`} className="border-b border-[#1f2a24]">
+                <td className="px-3 py-2 font-semibold text-white">{row.source}</td>
+                <td className="px-3 py-2 text-[#a8b3ad]">
+                  {row.forecastHighF !== null ? `${formatNumber(row.forecastHighF, 1)}°F` : "—"}
+                </td>
+                <td className="px-3 py-2 text-[#bae6fd]">{row.bucket ?? "—"}</td>
+                <td className="px-3 py-2 text-[#a8b3ad]">{row.weight.replace("_", " ")}</td>
+                <td className="px-3 py-2 text-[#a8b3ad]">{row.notes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function BucketProbabilityPanel({
+  probabilities,
+}: {
+  probabilities?: NonNullable<EventAiReview["bucketProbabilities"]>;
+}) {
+  if (!probabilities || probabilities.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+      <h4 className="font-semibold text-white">Bucket probability distribution</h4>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {probabilities.map((item) => (
+          <div key={item.bucket} className="rounded-xl border border-[#1f2a24] bg-[#101714] p-4">
+            <p className="font-semibold text-white">{item.bucket}</p>
+            <p className="mt-1 text-2xl font-bold text-[#7dd3fc]">
+              {item.probabilityPercent.toFixed(0)}%
+            </p>
+            <p className="mt-1 text-xs text-[#a8b3ad]">
+              Fair value: {formatPrice(item.fairValueEstimate)}
+            </p>
+            <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">{item.reasoning}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DecisionSupportPanel({ aiReview }: { aiReview: EventAiReview }) {
+  const hasFairValue = Boolean(aiReview.fairValue);
+  const hasTriggers = Boolean(aiReview.observationTriggers?.length);
+  const hasClock = Boolean(aiReview.settlementClock);
+  const hasForecastChange = Boolean(aiReview.forecastChangeRead);
+
+  if (!hasFairValue && !hasTriggers && !hasClock && !hasForecastChange) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#f59e0b]/30 bg-[#f59e0b]/10 p-5">
+      <p className="text-xs uppercase tracking-[0.18em] text-[#fcd34d]">
+        Decision support
+      </p>
+      {aiReview.fairValue ? (
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <MiniStat label="Fair YES" value={formatPrice(aiReview.fairValue.fairYesPrice)} />
+          <MiniStat label="Max entry" value={formatPrice(aiReview.fairValue.maxEntryPrice)} />
+          <MiniStat
+            label="Edge"
+            value={aiReview.fairValue.edgeCents !== null ? `${aiReview.fairValue.edgeCents.toFixed(1)}¢` : "—"}
+          />
+        </div>
+      ) : null}
+      {aiReview.fairValue?.priceDiscipline ? (
+        <p className="mt-4 text-sm leading-6 text-[#fde68a]">
+          {aiReview.fairValue.priceDiscipline}
+        </p>
+      ) : null}
+      {aiReview.forecastChangeRead ? (
+        <p className="mt-4 text-sm leading-6 text-[#fde68a]">
+          <span className="font-semibold text-white">Forecast trend:</span>{" "}
+          {aiReview.forecastChangeRead}
+        </p>
+      ) : null}
+      {aiReview.settlementClock ? (
+        <p className="mt-4 text-sm leading-6 text-[#fde68a]">
+          <span className="font-semibold text-white">Settlement clock:</span>{" "}
+          {aiReview.settlementClock.remainingHeatingWindow} {aiReview.settlementClock.settlementTimingRead}
+        </p>
+      ) : null}
+      {aiReview.observationTriggers?.length ? (
+        <div className="mt-4 space-y-3">
+          {aiReview.observationTriggers.map((trigger, index) => (
+            <div key={`${trigger.trigger}-${index}`} className="rounded-xl border border-[#f59e0b]/30 bg-[#0b120f]/70 p-3">
+              <p className="text-sm font-semibold text-white">{trigger.trigger}</p>
+              <p className="mt-1 text-sm text-[#fde68a]">{trigger.action}</p>
+              <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#fcd34d]">
+                {trigger.urgency} urgency
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
   return (
     <div className="space-y-5 rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5">
@@ -601,6 +768,12 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
           </p>
         ) : null}
       </div>
+
+      <ModelConsensusPanel rows={aiReview.modelConsensus} />
+
+      <BucketProbabilityPanel probabilities={aiReview.bucketProbabilities} />
+
+      <DecisionSupportPanel aiReview={aiReview} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
