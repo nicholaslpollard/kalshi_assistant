@@ -190,6 +190,28 @@ type PositionAiReview = {
   confidence: "low" | "medium" | "high";
   agreementWithDeterministicReview: "agree" | "partially_agree" | "disagree";
   summary: string;
+  independentForecast: {
+    predictedHighF: number | null;
+    mostLikelyBucket: string | null;
+    secondMostLikelyBucket: string | null;
+    probabilityEstimate: string;
+    confidencePercent: number | null;
+    reasoning: string;
+  };
+  weatherEvidenceRead: {
+    observationTrend: string;
+    forecastRead: string;
+    atmosphericRead: string;
+    marketPricingRead: string;
+    timingRead: string;
+  };
+  decisionPlan: {
+    immediateAction: string;
+    nextObservationTrigger: string;
+    invalidationSignal: string;
+    upsideScenario: string;
+    downsideScenario: string;
+  };
   keyReasons: string[];
   keyRisks: string[];
   sellNowCase: string;
@@ -919,6 +941,17 @@ function ReviewResultPanel({ review }: { review: PositionReview }) {
 }
 
 
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
+      <p className="text-xs uppercase tracking-[0.16em] text-[#6f7b74]">
+        {label}
+      </p>
+      <p className="mt-2 text-base font-semibold text-white">{value}</p>
+    </div>
+  );
+}
+
 function AiReviewResultPanel({ aiReview }: { aiReview: PositionAiReview }) {
   return (
     <div className="mt-6 space-y-4">
@@ -941,6 +974,98 @@ function AiReviewResultPanel({ aiReview }: { aiReview: PositionAiReview }) {
         </p>
         <p className="mt-4 text-sm leading-6 text-[#f4f7f5]">
           {aiReview.summary}
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#021018]/60 p-5">
+        <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
+          Independent weather forecast
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <MiniStat
+            label="Predicted high"
+            value={
+              aiReview.independentForecast.predictedHighF !== null
+                ? `${formatNumber(aiReview.independentForecast.predictedHighF, 1)}°F`
+                : "—"
+            }
+          />
+          <MiniStat
+            label="Most likely bucket"
+            value={aiReview.independentForecast.mostLikelyBucket ?? "—"}
+          />
+          <MiniStat
+            label="Forecast confidence"
+            value={
+              aiReview.independentForecast.confidencePercent !== null
+                ? `${aiReview.independentForecast.confidencePercent.toFixed(0)}%`
+                : "—"
+            }
+          />
+        </div>
+        <p className="mt-4 text-sm leading-6 text-[#bae6fd]">
+          {aiReview.independentForecast.probabilityEstimate}
+        </p>
+        <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+          {aiReview.independentForecast.reasoning}
+        </p>
+        {aiReview.independentForecast.secondMostLikelyBucket ? (
+          <p className="mt-3 text-sm text-[#7dd3fc]">
+            Second most likely: {aiReview.independentForecast.secondMostLikelyBucket}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Observation and timing read</h4>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.weatherEvidenceRead.observationTrend}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.weatherEvidenceRead.timingRead}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+          <h4 className="font-semibold text-white">Forecast and atmosphere read</h4>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.weatherEvidenceRead.forecastRead}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
+            {aiReview.weatherEvidenceRead.atmosphericRead}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-[#22c55e]/30 bg-[#22c55e]/10 p-5">
+        <p className="text-xs uppercase tracking-[0.18em] text-[#86efac]">
+          AI action plan
+        </p>
+        <h4 className="mt-2 text-lg font-bold text-white">
+          {aiReview.decisionPlan.immediateAction}
+        </h4>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <p className="text-sm leading-6 text-[#bbf7d0]">
+            <span className="font-semibold text-white">Next trigger:</span>{" "}
+            {aiReview.decisionPlan.nextObservationTrigger}
+          </p>
+          <p className="text-sm leading-6 text-[#bbf7d0]">
+            <span className="font-semibold text-white">Invalidation:</span>{" "}
+            {aiReview.decisionPlan.invalidationSignal}
+          </p>
+          <p className="text-sm leading-6 text-[#bbf7d0]">
+            <span className="font-semibold text-white">Upside:</span>{" "}
+            {aiReview.decisionPlan.upsideScenario}
+          </p>
+          <p className="text-sm leading-6 text-[#bbf7d0]">
+            <span className="font-semibold text-white">Downside:</span>{" "}
+            {aiReview.decisionPlan.downsideScenario}
+          </p>
+        </div>
+        <p className="mt-4 text-sm leading-6 text-[#bbf7d0]">
+          <span className="font-semibold text-white">Market pricing:</span>{" "}
+          {aiReview.weatherEvidenceRead.marketPricingRead}
         </p>
       </div>
 

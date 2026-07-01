@@ -125,6 +125,31 @@ export type EventAiCandidateAssessment = {
   assessmentReason: string;
 };
 
+export type EventAiIndependentForecast = {
+  predictedHighF: number | null;
+  mostLikelyBucket: string | null;
+  secondMostLikelyBucket: string | null;
+  probabilityEstimate: string;
+  confidencePercent: number | null;
+  reasoning: string;
+};
+
+export type EventAiWeatherEvidenceRead = {
+  observationTrend: string;
+  forecastRead: string;
+  atmosphericRead: string;
+  marketPricingRead: string;
+  timingRead: string;
+};
+
+export type EventAiDecisionPlan = {
+  immediateAction: string;
+  nextObservationTrigger: string;
+  invalidationSignal: string;
+  upsideScenario: string;
+  downsideScenario: string;
+};
+
 export type EventAiReviewResult = {
   action: EventAiReviewAction;
   recommendedBasketTicker: string | null;
@@ -132,6 +157,9 @@ export type EventAiReviewResult = {
   confidence: "low" | "medium" | "high";
   trueConfidencePercent: number | null;
   summary: string;
+  independentForecast: EventAiIndependentForecast;
+  weatherEvidenceRead: EventAiWeatherEvidenceRead;
+  decisionPlan: EventAiDecisionPlan;
   candidateAssessment: EventAiCandidateAssessment;
   dataRead: {
     nwsInterpretation: string;

@@ -17,6 +17,8 @@ import {
 import { parseWeatherTicker } from "@/lib/weather/weatherMarketParser";
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 type AppCandidateBasket = {
   ticker: string | null;
   label: string | null;

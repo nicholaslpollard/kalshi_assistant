@@ -60,11 +60,39 @@ export type PositionReviewResult = {
   aiReviewNote: string | null;
 };
 
+export type PositionAiIndependentForecast = {
+  predictedHighF: number | null;
+  mostLikelyBucket: string | null;
+  secondMostLikelyBucket: string | null;
+  probabilityEstimate: string;
+  confidencePercent: number | null;
+  reasoning: string;
+};
+
+export type PositionAiWeatherEvidenceRead = {
+  observationTrend: string;
+  forecastRead: string;
+  atmosphericRead: string;
+  marketPricingRead: string;
+  timingRead: string;
+};
+
+export type PositionAiDecisionPlan = {
+  immediateAction: string;
+  nextObservationTrigger: string;
+  invalidationSignal: string;
+  upsideScenario: string;
+  downsideScenario: string;
+};
+
 export type PositionAiReviewResult = {
   action: PositionReviewAction;
   confidence: "low" | "medium" | "high";
   agreementWithDeterministicReview: "agree" | "partially_agree" | "disagree";
   summary: string;
+  independentForecast: PositionAiIndependentForecast;
+  weatherEvidenceRead: PositionAiWeatherEvidenceRead;
+  decisionPlan: PositionAiDecisionPlan;
   keyReasons: string[];
   keyRisks: string[];
   sellNowCase: string;

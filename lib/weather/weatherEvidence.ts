@@ -333,11 +333,12 @@ function normalizeObservations(params: {
     const last = lastHourReadings.at(-1)?.tempF ?? null;
 
     if (first !== null && last !== null) {
-      trendLastHourF = roundOne(last - first);
+      const computedTrendLastHourF = roundOne(last - first);
+      trendLastHourF = computedTrendLastHourF;
 
-      if (trendLastHourF >= 1) {
+      if (computedTrendLastHourF !== null && computedTrendLastHourF >= 1) {
         trend = "rising";
-      } else if (trendLastHourF <= -1) {
+      } else if (computedTrendLastHourF !== null && computedTrendLastHourF <= -1) {
         trend = "falling";
       } else {
         trend = "flat";

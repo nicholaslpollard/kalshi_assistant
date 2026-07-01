@@ -30,6 +30,105 @@ function extractJsonObject(text: string) {
   }
 }
 
+function toNumberOrNull(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function toStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function getNestedObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readString(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function validateIndependentForecast(value: unknown) {
+  const forecast = getNestedObject(value);
+
+  return {
+    predictedHighF: toNumberOrNull(forecast?.predictedHighF),
+    mostLikelyBucket: typeof forecast?.mostLikelyBucket === "string" ? forecast.mostLikelyBucket : null,
+    secondMostLikelyBucket:
+      typeof forecast?.secondMostLikelyBucket === "string"
+        ? forecast.secondMostLikelyBucket
+        : null,
+    probabilityEstimate: readString(
+      forecast?.probabilityEstimate,
+      "No probability-style estimate was provided."
+    ),
+    confidencePercent: toNumberOrNull(forecast?.confidencePercent),
+    reasoning: readString(
+      forecast?.reasoning,
+      "No independent forecast reasoning was provided."
+    ),
+  };
+}
+
+function validateWeatherEvidenceRead(value: unknown) {
+  const read = getNestedObject(value);
+
+  return {
+    observationTrend: readString(
+      read?.observationTrend,
+      "No observation-trend read was provided."
+    ),
+    forecastRead: readString(read?.forecastRead, "No forecast read was provided."),
+    atmosphericRead: readString(
+      read?.atmosphericRead,
+      "No atmospheric read was provided."
+    ),
+    marketPricingRead: readString(
+      read?.marketPricingRead,
+      "No market-pricing read was provided."
+    ),
+    timingRead: readString(read?.timingRead, "No timing read was provided."),
+  };
+}
+
+function validateDecisionPlan(value: unknown) {
+  const plan = getNestedObject(value);
+
+  return {
+    immediateAction: readString(
+      plan?.immediateAction,
+      "No immediate action plan was provided."
+    ),
+    nextObservationTrigger: readString(
+      plan?.nextObservationTrigger,
+      "No next-observation trigger was provided."
+    ),
+    invalidationSignal: readString(
+      plan?.invalidationSignal,
+      "No invalidation signal was provided."
+    ),
+    upsideScenario: readString(plan?.upsideScenario, "No upside scenario was provided."),
+    downsideScenario: readString(
+      plan?.downsideScenario,
+      "No downside scenario was provided."
+    ),
+  };
+}
+
 function validateAiReview(value: unknown): PositionAiReviewResult {
   if (!value || typeof value !== "object") {
     throw new Error("AI review response was not an object.");
@@ -42,18 +141,17 @@ function validateAiReview(value: unknown): PositionAiReviewResult {
     confidence: review.confidence ?? "low",
     agreementWithDeterministicReview:
       review.agreementWithDeterministicReview ?? "partially_agree",
-    summary: review.summary ?? "AI review returned no summary.",
-    keyReasons: Array.isArray(review.keyReasons) ? review.keyReasons : [],
-    keyRisks: Array.isArray(review.keyRisks) ? review.keyRisks : [],
-    sellNowCase: review.sellNowCase ?? "No sell-now case provided.",
-    holdCase: review.holdCase ?? "No hold case provided.",
-    rollCase: review.rollCase ?? null,
-    whatWouldChangeMyMind: Array.isArray(review.whatWouldChangeMyMind)
-      ? review.whatWouldChangeMyMind
-      : [],
-    recommendedMonitoring: Array.isArray(review.recommendedMonitoring)
-      ? review.recommendedMonitoring
-      : [],
+    summary: readString(review.summary, "AI review returned no summary."),
+    independentForecast: validateIndependentForecast(review.independentForecast),
+    weatherEvidenceRead: validateWeatherEvidenceRead(review.weatherEvidenceRead),
+    decisionPlan: validateDecisionPlan(review.decisionPlan),
+    keyReasons: toStringArray(review.keyReasons),
+    keyRisks: toStringArray(review.keyRisks),
+    sellNowCase: readString(review.sellNowCase, "No sell-now case provided."),
+    holdCase: readString(review.holdCase, "No hold case provided."),
+    rollCase: typeof review.rollCase === "string" ? review.rollCase : null,
+    whatWouldChangeMyMind: toStringArray(review.whatWouldChangeMyMind),
+    recommendedMonitoring: toStringArray(review.recommendedMonitoring),
   };
 }
 
@@ -93,6 +191,28 @@ You return only valid JSON matching the requested schema.
       confidence: "low | medium | high",
       agreementWithDeterministicReview: "agree | partially_agree | disagree",
       summary: "short plain-English recommendation with independent weather/bucket read",
+      independentForecast: {
+        predictedHighF: "number or null",
+        mostLikelyBucket: "string or null, such as 89° to 90°",
+        secondMostLikelyBucket: "string or null",
+        probabilityEstimate: "plain-English probability estimate, such as 55-60% chance of 91+ but 89-90 still live",
+        confidencePercent: "number from 0 to 100 or null",
+        reasoning: "explain the independent final-temperature/bucket forecast",
+      },
+      weatherEvidenceRead: {
+        observationTrend: "latest temp, observed high so far, recent trend, and whether the held bucket is currently winning",
+        forecastRead: "NWS/Open-Meteo forecast highs and model agreement/disagreement",
+        atmosphericRead: "clouds, wind, humidity, radiation, storm/outflow risk and how they affect heating",
+        marketPricingRead: "market pricing, bid/ask, exit value, roll/hedge pricing, and whether price has already corrected",
+        timingRead: "remaining heating window, next obs timing, and settlement timing",
+      },
+      decisionPlan: {
+        immediateAction: "what to do now: hold, trim, sell, hedge, roll, or wait",
+        nextObservationTrigger: "specific next observation/temperature print that would change the action",
+        invalidationSignal: "specific evidence that proves this read wrong",
+        upsideScenario: "best-case scenario for the current position/candidate",
+        downsideScenario: "main way this position/candidate loses",
+      },
       keyReasons: ["reason 1", "reason 2"],
       keyRisks: ["risk 1", "risk 2"],
       sellNowCase: "plain-English case for selling now, including why the current bid is or is not worth taking",

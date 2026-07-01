@@ -67,6 +67,83 @@ function toStringArray(value: unknown) {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+function getNestedObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readString(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function validateIndependentForecast(value: unknown) {
+  const forecast = getNestedObject(value);
+
+  return {
+    predictedHighF: toNumberOrNull(forecast?.predictedHighF),
+    mostLikelyBucket: typeof forecast?.mostLikelyBucket === "string" ? forecast.mostLikelyBucket : null,
+    secondMostLikelyBucket:
+      typeof forecast?.secondMostLikelyBucket === "string"
+        ? forecast.secondMostLikelyBucket
+        : null,
+    probabilityEstimate: readString(
+      forecast?.probabilityEstimate,
+      "No probability-style estimate was provided."
+    ),
+    confidencePercent: toNumberOrNull(forecast?.confidencePercent),
+    reasoning: readString(
+      forecast?.reasoning,
+      "No independent forecast reasoning was provided."
+    ),
+  };
+}
+
+function validateWeatherEvidenceRead(value: unknown) {
+  const read = getNestedObject(value);
+
+  return {
+    observationTrend: readString(
+      read?.observationTrend,
+      "No observation-trend read was provided."
+    ),
+    forecastRead: readString(read?.forecastRead, "No forecast read was provided."),
+    atmosphericRead: readString(
+      read?.atmosphericRead,
+      "No atmospheric read was provided."
+    ),
+    marketPricingRead: readString(
+      read?.marketPricingRead,
+      "No market-pricing read was provided."
+    ),
+    timingRead: readString(read?.timingRead, "No timing read was provided."),
+  };
+}
+
+function validateDecisionPlan(value: unknown) {
+  const plan = getNestedObject(value);
+
+  return {
+    immediateAction: readString(
+      plan?.immediateAction,
+      "No immediate action plan was provided."
+    ),
+    nextObservationTrigger: readString(
+      plan?.nextObservationTrigger,
+      "No next-observation trigger was provided."
+    ),
+    invalidationSignal: readString(
+      plan?.invalidationSignal,
+      "No invalidation signal was provided."
+    ),
+    upsideScenario: readString(plan?.upsideScenario, "No upside scenario was provided."),
+    downsideScenario: readString(
+      plan?.downsideScenario,
+      "No downside scenario was provided."
+    ),
+  };
+}
+
 function validateCandidateAssessment(
   value: unknown,
   fallbackCandidate: AppCandidateBasket
@@ -138,10 +215,10 @@ function validateEventAiReview(
         ? review.confidence
         : "low",
     trueConfidencePercent: toNumberOrNull(review.trueConfidencePercent),
-    summary:
-      typeof review.summary === "string"
-        ? review.summary
-        : "AI review returned no summary.",
+    summary: readString(review.summary, "AI review returned no summary."),
+    independentForecast: validateIndependentForecast(review.independentForecast),
+    weatherEvidenceRead: validateWeatherEvidenceRead(review.weatherEvidenceRead),
+    decisionPlan: validateDecisionPlan(review.decisionPlan),
     candidateAssessment: validateCandidateAssessment(
       review.candidateAssessment,
       fallbackCandidate
@@ -234,6 +311,28 @@ Return only valid JSON matching the requested schema.
       confidence: "low | medium | high",
       trueConfidencePercent: "number from 0 to 100 or null",
       summary: "plain-English independent opinion with your independent most-likely bucket/temperature read",
+      independentForecast: {
+        predictedHighF: "number or null",
+        mostLikelyBucket: "string or null, such as 89° to 90°",
+        secondMostLikelyBucket: "string or null",
+        probabilityEstimate: "plain-English probability estimate with any meaningful threshold odds, such as 55-60% chance of 91+",
+        confidencePercent: "number from 0 to 100 or null",
+        reasoning: "explain the independent final-temperature/bucket forecast",
+      },
+      weatherEvidenceRead: {
+        observationTrend: "latest temp, observed high so far, recent trend, and whether any candidate bucket is already hit",
+        forecastRead: "NWS/Open-Meteo forecast highs and model agreement/disagreement",
+        atmosphericRead: "clouds, wind, humidity, radiation, storm/outflow risk and how they affect heating",
+        marketPricingRead: "market pricing, app candidate price, favorite basket, and whether price has already corrected",
+        timingRead: "remaining heating window, next obs timing, and settlement timing",
+      },
+      decisionPlan: {
+        immediateAction: "what to do now: enter, watch, avoid, wait, hedge, or no action",
+        nextObservationTrigger: "specific next observation/forecast update that would change the action",
+        invalidationSignal: "specific evidence that proves this read wrong",
+        upsideScenario: "best-case scenario for the candidate/recommended basket",
+        downsideScenario: "main way this candidate/recommended basket loses",
+      },
       candidateAssessment: {
         appCandidateTicker: "string or null",
         appCandidateLabel: "string or null",
