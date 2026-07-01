@@ -7,6 +7,7 @@ import {
 import { getKalshiEventWithMarkets } from "@/lib/kalshi/client";
 import { runEventAiReview } from "@/lib/openai/eventAiReview";
 import { getOpenMeteoForecast } from "@/lib/weather/openMeteoClient";
+import { buildWeatherEvidencePacket } from "@/lib/weather/weatherEvidence";
 import {
   getNwsAlerts,
   getNwsForecastFromUrl,
@@ -480,6 +481,21 @@ export async function POST(request: Request) {
         }),
       ]);
 
+    const weatherEvidence = buildWeatherEvidencePacket({
+      stationId: config.nwsObservationStation,
+      stationName: config.displayName,
+      timezone: config.timezone,
+      latitude: config.latitude,
+      longitude: config.longitude,
+      eventDate: eventContext.eventDate,
+      nwsPoint: point,
+      nwsDailyForecast: forecast,
+      nwsHourlyForecast: hourlyForecast,
+      nwsObservations: observations,
+      nwsAlerts: alerts,
+      openMeteo,
+    });
+
     const aiReview = await runEventAiReview({
       apiKey: openAiCredentials.apiKey,
       payload: {
@@ -521,6 +537,7 @@ export async function POST(request: Request) {
           alerts,
         },
         openMeteo,
+        weatherEvidence,
       },
     });
 
@@ -530,6 +547,7 @@ export async function POST(request: Request) {
       seriesTicker,
       generatedAt: new Date().toISOString(),
       appCandidateBasket,
+      weatherEvidence,
       aiReview,
     });
   } catch (error) {

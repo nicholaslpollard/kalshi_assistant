@@ -8,6 +8,7 @@ type RunPositionAiReviewInput = {
   model?: string;
   position: Record<string, unknown>;
   weather: Record<string, unknown> | null;
+  weatherEvidence?: Record<string, unknown> | null;
   basketMarkets: Record<string, unknown>[];
   deterministicReview: PositionReviewResult;
 };
@@ -63,35 +64,47 @@ export async function runPositionAiReview({
   weather,
   basketMarkets,
   deterministicReview,
+  weatherEvidence = null,
 }: RunPositionAiReviewInput): Promise<PositionAiReviewResult> {
   const systemPrompt = `
 You are an advisory-only Kalshi weather position review assistant.
 
 You do not place trades.
 You do not tell the user a trade is guaranteed.
-You review the deterministic math, market pricing, weather data, and bucket alignment.
+You review deterministic math, market pricing, weather data, bucket alignment, recent observations, forecast highs, and atmospheric context.
+Your goal is to produce the kind of practical trade-management read a sharp weather-market trader would want: current winning bucket, overshoot risk, roll/hedge options, what the next observation would change, and what price/risk tradeoff matters.
 You return only valid JSON matching the requested schema.
 `;
 
   const userPrompt = {
-    task: "Review this open Kalshi weather position and provide an advisory recommendation.",
+    task: "Review this open Kalshi weather position and provide an advisory recommendation using the full weather evidence packet when available.",
+    analysisInstructions: [
+      "Make an independent final-temperature/bucket read before deciding on the action.",
+      "For same-day positions, weigh observed high so far, latest observation, recent trend, remaining heating window, clouds, wind, humidity, storm/outflow risk, and forecast highs.",
+      "If the held bucket is currently winning, focus on overshoot risk and whether selling, holding, trimming, or hedging/rolling is better.",
+      "If a neighboring bucket is becoming more likely, explain whether to roll fully or hedge partially and what observation would confirm it.",
+      "For future positions, use NWS hourly forecast, Open-Meteo hourly forecast, model agreement, forecast spread, and market pricing as primary evidence.",
+      "Do not simply repeat the deterministic review. You may agree or disagree with it based on the evidence packet.",
+      "Use concrete observation triggers whenever possible, such as: if the next print is 91°F, roll; if two more prints stay 89°F, hold/sell the hedge.",
+    ],
     outputSchema: {
       action:
         "HOLD | WATCH_CLOSELY | HOLD_OR_TRIM_PROFIT | SELL_TO_LOCK_PROFIT | SELL_FULL_POSITION | CUT_LOSS | ROLL_TO_BETTER_BUCKET | NO_ACTION",
       confidence: "low | medium | high",
       agreementWithDeterministicReview: "agree | partially_agree | disagree",
-      summary: "short plain-English recommendation",
+      summary: "short plain-English recommendation with independent weather/bucket read",
       keyReasons: ["reason 1", "reason 2"],
       keyRisks: ["risk 1", "risk 2"],
-      sellNowCase: "plain-English case for selling now",
-      holdCase: "plain-English case for holding",
-      rollCase: "plain-English roll discussion or null",
+      sellNowCase: "plain-English case for selling now, including why the current bid is or is not worth taking",
+      holdCase: "plain-English case for holding, including current winning bucket and overshoot risk when relevant",
+      rollCase: "plain-English roll or hedge discussion, including target/hedge bucket and trigger; null if not relevant",
       whatWouldChangeMyMind: ["specific condition that would change recommendation"],
       recommendedMonitoring: ["specific data to monitor next"],
     },
     deterministicReview,
     position,
     weather,
+    weatherEvidence,
     basketMarkets,
   };
 

@@ -24,6 +24,7 @@ type RunEventAiReviewInput = {
     kalshiMarkets: Record<string, unknown>[];
     nws: Record<string, unknown>;
     openMeteo: Record<string, unknown>;
+    weatherEvidence?: Record<string, unknown> | null;
   };
 };
 
@@ -191,7 +192,11 @@ You are an independent advisory-only Kalshi weather event analyst.
 You do not place trades.
 You do not know or use the app's deterministic scanner score.
 You must not assume there is an opportunity.
-You independently interpret Kalshi market pricing, NWS data, Open-Meteo data, and observations.
+You independently interpret Kalshi market pricing, NWS data, Open-Meteo data, observations, and the normalized weather evidence packet when available.
+
+When a weatherEvidence packet is provided, use it as the primary structured source for observation trend, observed high so far, remaining heating window, NWS/Open-Meteo forecast highs, atmospheric conditions, and source agreement. Use the raw NWS/Open-Meteo payloads as supporting detail.
+
+For same-day daily-high events, explicitly evaluate: current winning bucket, observed high so far, latest reading, recent trend, remaining heating window, overshoot risk, cloud cover, wind, humidity, and storm/outflow risk.
 
 For tomorrow or future daily-high events, observations may be unavailable or irrelevant. Do not mark a future event insufficient only because there are no same-day observations. Use NWS forecast highs and Open-Meteo daily maximum forecasts as the primary evidence, compare them to the available Kalshi range baskets, and identify the forecast-supported basket if one exists.
 
@@ -199,7 +204,7 @@ For hourly temperature events, use NWS hourly forecast and Open-Meteo hourly for
 
 The app may provide one app-selected candidate basket. Treat it only as a candidate to evaluate, not as a conclusion. You may agree, partially agree, disagree, recommend a different basket, recommend watching only, or recommend avoiding the event.
 
-Your job is to explain what the data means and give an opinion on which basket, if any, is worth entering or worth watching.
+Your job is to explain what the data means, make an independent final-temperature/bucket forecast, and give an opinion on which basket, if any, is worth entering or worth watching.
 Your confidence must reflect the reliability of the data and how strong the conclusion is at this moment.
 Return only valid JSON matching the requested schema.
 `;
@@ -209,6 +214,8 @@ Return only valid JSON matching the requested schema.
     importantRules: [
       "Do not use any deterministic scanner score, signal, reasons, or risks.",
       "The appCandidateBasket is only a candidate. Do not assume it is correct.",
+      "Use the weatherEvidence packet when available. It contains normalized observations, forecast highs, trend, atmosphere, timing, and model agreement.",
+      "For same-day events, discuss observed high so far, whether the candidate bucket is already hit, overshoot risk, recent trend, and remaining heating window.",
       "For tomorrow/future daily-high events, use NWS and Open-Meteo forecast highs as primary evidence even when observations are missing.",
       "For future events, identify the forecast-supported basket and compare it to market pricing.",
       "Explicitly assess whether you agree, partially agree, or disagree with the app candidate.",
@@ -218,6 +225,7 @@ Return only valid JSON matching the requested schema.
       "Give a true confidence percentage based on data reliability, agreement between sources, timing, and market pricing.",
       "If recommending entry, specify the exact basket ticker and label if identifiable.",
       "Mention a preferred maximum entry price and fair value estimate when possible.",
+      "Give concrete next-observation or forecast-update triggers that would change the decision.",
     ],
     outputSchema: {
       action: "ENTER_YES | WATCH_ONLY | AVOID | INSUFFICIENT_DATA",
@@ -225,7 +233,7 @@ Return only valid JSON matching the requested schema.
       recommendedBasketLabel: "string or null",
       confidence: "low | medium | high",
       trueConfidencePercent: "number from 0 to 100 or null",
-      summary: "plain-English independent opinion",
+      summary: "plain-English independent opinion with your independent most-likely bucket/temperature read",
       candidateAssessment: {
         appCandidateTicker: "string or null",
         appCandidateLabel: "string or null",
@@ -238,7 +246,7 @@ Return only valid JSON matching the requested schema.
         openMeteoInterpretation: "what Open-Meteo data means",
         kalshiMarketInterpretation: "what market pricing means",
         observationInterpretation:
-          "what observations mean; for future events, explicitly state that observations are not yet useful and that forecast data is primary",
+          "what observations and trend mean; for same-day events include observed high so far, latest reading, and overshoot/undershoot risk; for future events state that observations are not yet useful and forecast data is primary",
       },
       entryOpinion: {
         shouldEnter: "boolean",

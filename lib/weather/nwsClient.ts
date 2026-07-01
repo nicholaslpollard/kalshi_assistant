@@ -38,6 +38,22 @@ export async function getNwsForecastFromUrl(url: string) {
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+export async function getNwsHourlyForecastFromPoint(
+  point: Record<string, unknown>
+) {
+  const properties = point.properties as Record<string, unknown> | undefined;
+  const forecastHourlyUrl =
+    typeof properties?.forecastHourly === "string"
+      ? properties.forecastHourly
+      : null;
+
+  if (!forecastHourlyUrl) {
+    return null;
+  }
+
+  return getNwsForecastFromUrl(forecastHourlyUrl);
+}
+
 export async function getNwsStationObservations(stationId: string) {
   return nwsFetch<Record<string, unknown>>(
     `/stations/${encodeURIComponent(stationId)}/observations?limit=500`
