@@ -4,6 +4,7 @@ import {
   getDecryptedKalshiCredentials,
   getDecryptedOpenAiCredentials,
 } from "@/lib/data/credentialRepository";
+import { saveWeatherForecastSnapshot } from "@/lib/data/weatherHistoryRepository";
 import { getKalshiEventWithMarkets } from "@/lib/kalshi/client";
 import { runEventAiReview } from "@/lib/openai/eventAiReview";
 import {
@@ -569,6 +570,30 @@ export async function POST(request: Request) {
       },
     });
 
+    let snapshotSaved = false;
+
+    try {
+      await saveWeatherForecastSnapshot(user.uid, {
+        sourceType: "event_ai_review",
+        eventTicker,
+        seriesTicker,
+        marketCode: eventContext.marketCode,
+        stationId: config.nwsObservationStation,
+        stationName: config.displayName,
+        eventDate: eventContext.eventDate,
+        eventFamily:
+          eventContext.family === "hourly_temperature"
+            ? "hourly_temperature"
+            : "daily_high",
+        eventHourLocal: eventContext.eventHourLocal,
+        weatherEvidence: weatherEvidence as unknown as Record<string, unknown>,
+        aiReview: aiReview as unknown as Record<string, unknown>,
+      });
+      snapshotSaved = true;
+    } catch (snapshotError) {
+      console.error("Failed to save event weather forecast snapshot:", snapshotError);
+    }
+
     return NextResponse.json({
       ok: true,
       eventTicker,
@@ -577,6 +602,7 @@ export async function POST(request: Request) {
       appCandidateBasket,
       weatherEvidence,
       aiReview,
+      snapshotSaved,
     });
   } catch (error) {
     console.error("Independent event AI review failed:", error);

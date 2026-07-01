@@ -1,4 +1,9 @@
 import type {
+  AiBucketProbability,
+  AiFairValueRead,
+  AiModelConsensusRow,
+  AiObservationTrigger,
+  AiSettlementClockRead,
   PositionAiReviewResult,
   PositionReviewResult,
 } from "@/types/positionReview";
@@ -63,7 +68,7 @@ function readString(value: unknown, fallback: string) {
 }
 
 
-function readWeight(value: unknown) {
+function readWeight(value: unknown): AiModelConsensusRow["weight"] {
   return value === "very_high" ||
     value === "high" ||
     value === "medium_high" ||
@@ -74,11 +79,11 @@ function readWeight(value: unknown) {
     : "context";
 }
 
-function readUrgency(value: unknown) {
+function readUrgency(value: unknown): AiObservationTrigger["urgency"] {
   return value === "high" || value === "medium" || value === "low" ? value : "medium";
 }
 
-function validateModelConsensus(value: unknown) {
+function validateModelConsensus(value: unknown): AiModelConsensusRow[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -101,7 +106,7 @@ function validateModelConsensus(value: unknown) {
     .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
-function validateBucketProbabilities(value: unknown) {
+function validateBucketProbabilities(value: unknown): AiBucketProbability[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -126,7 +131,7 @@ function validateBucketProbabilities(value: unknown) {
     .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
-function validateFairValue(value: unknown) {
+function validateFairValue(value: unknown): AiFairValueRead {
   const read = getNestedObject(value);
 
   return {
@@ -140,7 +145,7 @@ function validateFairValue(value: unknown) {
   };
 }
 
-function validateObservationTriggers(value: unknown) {
+function validateObservationTriggers(value: unknown): AiObservationTrigger[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -161,7 +166,7 @@ function validateObservationTriggers(value: unknown) {
     .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
-function validateSettlementClock(value: unknown) {
+function validateSettlementClock(value: unknown): AiSettlementClockRead {
   const read = getNestedObject(value);
 
   return {

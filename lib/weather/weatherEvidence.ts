@@ -1591,12 +1591,12 @@ export function buildWeatherEvidencePacket(params: {
       capRisk: risks.capRisk,
     },
     decisionSupport: {
-  modelConsensus,
-  bucketProbabilities,
-  observationTriggers,
-  settlementClock,
-  forecastChangeRead,
-},
+      modelConsensus,
+      bucketProbabilities,
+      observationTriggers,
+      settlementClock,
+      forecastChangeRead,
+    },
     reasoning,
     rawSources: {
       nwsPoint: params.nwsPoint,

@@ -1,6 +1,7 @@
 import { getServerUserFromRequest } from "@/lib/auth/getServerUser";
 import { WEATHER_MARKETS } from "@/lib/config/weatherMarkets";
 import { getDecryptedOpenAiCredentials } from "@/lib/data/credentialRepository";
+import { saveWeatherForecastSnapshot } from "@/lib/data/weatherHistoryRepository";
 import { runPositionAiReview } from "@/lib/openai/positionAiReview";
 import {
   getOpenMeteoEvidenceForecasts,
@@ -195,10 +196,35 @@ export async function POST(request: Request) {
       deterministicReview: body.deterministicReview as PositionReviewResult,
     });
 
+    let snapshotSaved = false;
+
+    try {
+      const ticker = requestTicker ?? getTickerFromBodyPosition(body);
+      const parsed = ticker ? parseWeatherTicker(ticker) : null;
+      const config = parsed?.marketCode ? WEATHER_MARKETS[parsed.marketCode] : null;
+
+      await saveWeatherForecastSnapshot(user.uid, {
+        sourceType: "position_ai_review",
+        positionTicker: ticker,
+        marketCode: parsed?.marketCode ?? null,
+        stationId: config?.nwsObservationStation ?? null,
+        stationName: config?.displayName ?? null,
+        eventDate: parsed?.eventDate ?? null,
+        eventFamily: "daily_high",
+        eventHourLocal: null,
+        weatherEvidence: weatherEvidence as Record<string, unknown> | null,
+        aiReview: aiReview as unknown as Record<string, unknown>,
+      });
+      snapshotSaved = true;
+    } catch (snapshotError) {
+      console.error("Failed to save position weather forecast snapshot:", snapshotError);
+    }
+
     return NextResponse.json({
       ok: true,
       weatherEvidence,
       aiReview,
+      snapshotSaved,
     });
   } catch (error) {
     console.error("AI position review failed:", error);
