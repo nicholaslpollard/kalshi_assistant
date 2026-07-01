@@ -5,6 +5,14 @@ import { firebaseAuth } from "@/lib/firebase/client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+const NAV_LINKS = [
+  { href: "/", label: "Home" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/positions", label: "Positions" },
+  { href: "/events", label: "Event Scanner" },
+  { href: "/settings/credentials", label: "Credentials" },
+];
+
 type AccountSummary = {
   kalshiConnected: boolean;
   balanceDollars: number | null;
@@ -75,10 +83,81 @@ function SummaryItem({
   );
 }
 
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function AccountSummaryGrid({
+  summary,
+  loadingSummary,
+  compact = false,
+}: {
+  summary: AccountSummary | null;
+  loadingSummary: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? "grid grid-cols-2 gap-2" : "grid gap-3 md:grid-cols-4 xl:grid-cols-7"}>
+      <SummaryItem
+        label="Kalshi"
+        value={
+          summary?.kalshiConnected
+            ? "Connected"
+            : loadingSummary
+              ? "Checking"
+              : "Not connected"
+        }
+        valueClassName={
+          summary?.kalshiConnected
+            ? "mt-1 text-sm font-semibold text-[#22c55e]"
+            : "mt-1 text-sm font-semibold text-[#f4f7f5]"
+        }
+      />
+
+      <SummaryItem
+        label="Balance"
+        value={formatDollars(summary?.balanceDollars ?? null)}
+      />
+
+      <SummaryItem
+        label="Open positions"
+        value={formatNumber(summary?.openPositionCount ?? null)}
+      />
+
+      <SummaryItem
+        label="Exposure"
+        value={formatDollars(summary?.totalExposureDollars ?? null)}
+      />
+
+      <SummaryItem
+        label="Exit value"
+        value={formatDollars(summary?.totalCurrentExitValueDollars ?? null)}
+      />
+
+      <SummaryItem
+        label="Unrealized P/L"
+        value={formatDollars(summary?.totalUnrealizedPnlAfterFeesDollars ?? null)}
+        valueClassName={getPnlClass(summary?.totalUnrealizedPnlAfterFeesDollars ?? null)}
+      />
+
+      <SummaryItem
+        label="Total P/L"
+        value={formatDollars(summary?.totalPnlDollars ?? null)}
+        valueClassName={getPnlClass(summary?.totalPnlDollars ?? null)}
+      />
+    </div>
+  );
+}
+
+function NavLink({
+  href,
+  children,
+  onClick,
+}: {
+  href: string;
+  children: React.ReactNode;
+  onClick?: () => void;
+}) {
   return (
     <Link
       href={href}
+      onClick={onClick}
       className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
     >
       {children}
@@ -91,6 +170,8 @@ export function AppNav() {
 
   const [summary, setSummary] = useState<AccountSummary | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
 
   async function loadSummary() {
     if (!firebaseAuth.currentUser) {
@@ -125,9 +206,20 @@ export function AppNav() {
     void loadSummary();
   }, [user]);
 
+  async function handleLogout() {
+    setMobileMenuOpen(false);
+    setMobileSummaryOpen(false);
+    await logout();
+  }
+
+  function closeMobilePanels() {
+    setMobileMenuOpen(false);
+    setMobileSummaryOpen(false);
+  }
+
   return (
     <header className="sticky top-0 z-50 border-b border-[#1f2a24] bg-[#050807]/95 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-4">
+      <div className="mx-auto hidden max-w-7xl flex-col gap-4 px-6 py-4 lg:flex">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <Link href="/" className="block">
@@ -145,11 +237,11 @@ export function AppNav() {
           </div>
 
           <nav className="flex flex-wrap gap-2">
-            <NavLink href="/">Home</NavLink>
-            <NavLink href="/dashboard">Dashboard</NavLink>
-            <NavLink href="/positions">Positions</NavLink>
-            <NavLink href="/events">Event Scanner</NavLink>
-            <NavLink href="/settings/credentials">Credentials</NavLink>
+            {NAV_LINKS.map((link) => (
+              <NavLink key={link.href} href={link.href}>
+                {link.label}
+              </NavLink>
+            ))}
 
             <button
               type="button"
@@ -163,7 +255,7 @@ export function AppNav() {
             {user ? (
               <button
                 type="button"
-                onClick={() => logout()}
+                onClick={() => handleLogout()}
                 className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#f4f7f5] transition hover:border-[#ef4444] hover:text-[#fecaca]"
               >
                 Sign out
@@ -180,58 +272,99 @@ export function AppNav() {
         </div>
 
         {user ? (
-          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
-            <SummaryItem
-              label="Kalshi"
-              value={
-                summary?.kalshiConnected
-                  ? "Connected"
-                  : loadingSummary
-                    ? "Checking"
-                    : "Not connected"
-              }
-              valueClassName={
-                summary?.kalshiConnected
-                  ? "mt-1 text-sm font-semibold text-[#22c55e]"
-                  : "mt-1 text-sm font-semibold text-[#f4f7f5]"
-              }
-            />
+          <AccountSummaryGrid summary={summary} loadingSummary={loadingSummary} />
+        ) : null}
+      </div>
 
-            <SummaryItem
-              label="Balance"
-              value={formatDollars(summary?.balanceDollars ?? null)}
-            />
+      <div className="mx-auto flex max-w-7xl flex-col px-4 py-3 lg:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <Link href="/" onClick={closeMobilePanels} className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#22c55e]">
+              Kalshi Assistant
+            </p>
+            <p className="mt-0.5 truncate text-base font-bold text-white">
+              Weather Dashboard
+            </p>
+          </Link>
 
-            <SummaryItem
-              label="Open positions"
-              value={formatNumber(summary?.openPositionCount ?? null)}
-            />
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-app-navigation"
+            className="rounded-xl border border-[#1f2a24] px-3 py-2 text-sm font-semibold text-[#f4f7f5] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+          >
+            {mobileMenuOpen ? "Close" : "Menu"}
+          </button>
+        </div>
 
-            <SummaryItem
-              label="Exposure"
-              value={formatDollars(summary?.totalExposureDollars ?? null)}
-            />
+        {mobileMenuOpen ? (
+          <div id="mobile-app-navigation" className="mt-3 space-y-3 border-t border-[#1f2a24] pt-3">
+            <p className="truncate text-xs text-[#a8b3ad]">
+              {user?.email ? `Signed in as ${user.email}` : "Not signed in"}
+            </p>
 
-            <SummaryItem
-              label="Exit value"
-              value={formatDollars(summary?.totalCurrentExitValueDollars ?? null)}
-            />
+            <nav className="grid grid-cols-2 gap-2">
+              {NAV_LINKS.map((link) => (
+                <NavLink key={link.href} href={link.href} onClick={closeMobilePanels}>
+                  {link.label}
+                </NavLink>
+              ))}
+            </nav>
 
-            <SummaryItem
-              label="Unrealized P/L"
-              value={formatDollars(
-                summary?.totalUnrealizedPnlAfterFeesDollars ?? null
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => loadSummary()}
+                disabled={loadingSummary || !user}
+                className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loadingSummary ? "Refreshing..." : "Refresh"}
+              </button>
+
+              {user ? (
+                <button
+                  type="button"
+                  onClick={() => handleLogout()}
+                  className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#f4f7f5] transition hover:border-[#ef4444] hover:text-[#fecaca]"
+                >
+                  Sign out
+                </button>
+              ) : (
+                <Link
+                  href="/login"
+                  onClick={closeMobilePanels}
+                  className="rounded-xl bg-[#22c55e] px-4 py-2 text-center text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a]"
+                >
+                  Sign in
+                </Link>
               )}
-              valueClassName={getPnlClass(
-                summary?.totalUnrealizedPnlAfterFeesDollars ?? null
-              )}
-            />
+            </div>
 
-            <SummaryItem
-              label="Total P/L"
-              value={formatDollars(summary?.totalPnlDollars ?? null)}
-              valueClassName={getPnlClass(summary?.totalPnlDollars ?? null)}
-            />
+            {user ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setMobileSummaryOpen((open) => !open)}
+                  aria-expanded={mobileSummaryOpen}
+                  aria-controls="mobile-account-summary"
+                  className="flex w-full items-center justify-between rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+                >
+                  <span>Account summary</span>
+                  <span>{mobileSummaryOpen ? "Hide" : "Show"}</span>
+                </button>
+
+                {mobileSummaryOpen ? (
+                  <div id="mobile-account-summary">
+                    <AccountSummaryGrid
+                      summary={summary}
+                      loadingSummary={loadingSummary}
+                      compact
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
