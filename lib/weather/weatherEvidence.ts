@@ -1590,6 +1590,13 @@ export function buildWeatherEvidencePacket(params: {
       overshootRisk: risks.overshootRisk,
       capRisk: risks.capRisk,
     },
+    decisionSupport: {
+  modelConsensus,
+  bucketProbabilities,
+  observationTriggers,
+  settlementClock,
+  forecastChangeRead,
+},
     reasoning,
     rawSources: {
       nwsPoint: params.nwsPoint,
