@@ -201,6 +201,56 @@ type EventScannerResponse = {
   };
 };
 
+type LeadTimeBucket =
+  | "0_3h_before_peak"
+  | "3_6h_before_peak"
+  | "6_12h_before_peak"
+  | "12_18h_before_peak"
+  | "18_30h_before_peak"
+  | "30_48h_before_peak"
+  | "2_5d_before_peak"
+  | "after_peak"
+  | "unknown";
+
+type ScannerLeadTimeBiasRow = {
+  source: string;
+  leadTimeBucket: LeadTimeBucket;
+  leadTimeLabel: string;
+  sampleCount: number;
+  meanErrorF: number | null;
+  meanAbsoluteErrorF: number | null;
+  exactBucketCount: number;
+  withinOneBucketCount: number;
+  notes: string;
+};
+
+type ScannerBiasSummary = {
+  leadTimeRows?: ScannerLeadTimeBiasRow[];
+  rows?: Array<{
+    source: string;
+    sampleCount: number;
+    meanErrorF: number | null;
+    meanAbsoluteErrorF: number | null;
+    exactBucketCount?: number;
+    withinOneBucketCount?: number;
+    notes?: string;
+  }>;
+};
+
+type ScannerBiasRead = {
+  leadTimeBucket: LeadTimeBucket;
+  leadTimeLabel: string;
+  sampleCount: number;
+  bestSource: string | null;
+  meanErrorF: number | null;
+  meanAbsoluteErrorF: number | null;
+  scoreAdjustment: number;
+  adjustedForecastHighF: number | null;
+  adjustedBucket: string | null;
+  headline: string;
+  note: string;
+};
+
 function formatPrice(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
     return "—";
@@ -315,6 +365,128 @@ function signalClass(signal: EventScannerSignal) {
       return "border-[#1f2a24] bg-[#0b120f] text-[#a8b3ad]";
   }
 }
+function classifyScannerLeadTime(event: EventScannerResult, now = new Date()): { bucket: LeadTimeBucket; label: string; hours: number | null } {
+  if (!event.eventDate) {
+    return { bucket: "unknown", label: "Unknown lead time", hours: null };
+  }
+
+  const targetHour = event.family === "hourly_temperature" && event.eventHourLocal !== null ? event.eventHourLocal : 16;
+  const target = new Date(`${event.eventDate}T${String(targetHour).padStart(2, "0")}:00:00`);
+
+  if (Number.isNaN(target.getTime())) {
+    return { bucket: "unknown", label: "Unknown lead time", hours: null };
+  }
+
+  const hours = (target.getTime() - now.getTime()) / 36e5;
+
+  if (hours < 0) {
+    return { bucket: "after_peak", label: "After normal peak window", hours };
+  }
+
+  if (hours <= 3) return { bucket: "0_3h_before_peak", label: "0–3h before peak", hours };
+  if (hours <= 6) return { bucket: "3_6h_before_peak", label: "3–6h before peak", hours };
+  if (hours <= 12) return { bucket: "6_12h_before_peak", label: "6–12h before peak", hours };
+  if (hours <= 18) return { bucket: "12_18h_before_peak", label: "12–18h before peak", hours };
+  if (hours <= 30) return { bucket: "18_30h_before_peak", label: "18–30h before peak", hours };
+  if (hours <= 48) return { bucket: "30_48h_before_peak", label: "30–48h before peak", hours };
+  if (hours <= 120) return { bucket: "2_5d_before_peak", label: "2–5d before peak", hours };
+
+  return { bucket: "unknown", label: `${Math.round(hours)}h before peak`, hours };
+}
+
+function normalizeLeadTimeBucket(value: LeadTimeBucket): LeadTimeBucket {
+  // Older generated clients may have rendered the 18–30h label with a unicode dash.
+  return value;
+}
+
+function dailyHighBucketLabelFromTemperature(tempF: number | null) {
+  if (tempF === null || !Number.isFinite(tempF)) {
+    return null;
+  }
+
+  const lower = Math.floor(tempF);
+  return `${lower}° to ${lower + 1}°`;
+}
+
+function summarizeLeadTimeBias(event: EventScannerResult, biasSummary: ScannerBiasSummary | null): ScannerBiasRead {
+  const lead = classifyScannerLeadTime(event);
+  const leadBucket = normalizeLeadTimeBucket(lead.bucket);
+  const rows = (biasSummary?.leadTimeRows ?? []).filter((row) => normalizeLeadTimeBucket(row.leadTimeBucket) === leadBucket);
+  const usableRows = rows.filter((row) => row.sampleCount >= 2 && row.meanAbsoluteErrorF !== null);
+  const best = usableRows.slice().sort((a, b) => {
+    const aMae = a.meanAbsoluteErrorF ?? 99;
+    const bMae = b.meanAbsoluteErrorF ?? 99;
+    return aMae - bMae || b.sampleCount - a.sampleCount;
+  })[0] ?? null;
+
+  const weightedRows = usableRows.length ? usableRows : rows.filter((row) => row.meanErrorF !== null);
+  const totalSamples = weightedRows.reduce((sum, row) => sum + Math.max(0, row.sampleCount), 0);
+  const weightedError = totalSamples > 0
+    ? weightedRows.reduce((sum, row) => sum + (row.meanErrorF ?? 0) * Math.max(0, row.sampleCount), 0) / totalSamples
+    : null;
+  const weightedMae = totalSamples > 0
+    ? weightedRows.reduce((sum, row) => sum + (row.meanAbsoluteErrorF ?? 0) * Math.max(0, row.sampleCount), 0) / totalSamples
+    : null;
+
+  const forecastHigh = event.forecastSynthesis?.predictedHighF ?? event.weather.nwsTemperatureF ?? event.weather.openMeteoTemperatureF ?? null;
+  const adjustedForecastHighF = forecastHigh !== null && weightedError !== null ? forecastHigh - weightedError : null;
+  const adjustedBucket = event.family === "daily_high" ? dailyHighBucketLabelFromTemperature(adjustedForecastHighF) : null;
+
+  const scoreAdjustment = (() => {
+    if (!best || best.meanAbsoluteErrorF === null || best.sampleCount < 2) return 0;
+    let delta = 0;
+    if (best.meanAbsoluteErrorF <= 0.75) delta += 7;
+    else if (best.meanAbsoluteErrorF <= 1.25) delta += 4;
+    else if (best.meanAbsoluteErrorF >= 2.5) delta -= 6;
+
+    if (Math.abs(best.meanErrorF ?? 0) >= 1.5) delta += 2;
+    if (weightedRows.length >= 3) delta += 2;
+    return Math.max(-8, Math.min(10, delta));
+  })();
+
+  if (!rows.length) {
+    return {
+      leadTimeBucket: leadBucket,
+      leadTimeLabel: lead.label,
+      sampleCount: 0,
+      bestSource: null,
+      meanErrorF: null,
+      meanAbsoluteErrorF: null,
+      scoreAdjustment: 0,
+      adjustedForecastHighF: null,
+      adjustedBucket: null,
+      headline: "No lead-time bias history yet",
+      note: `No resolved samples are available for scans run ${lead.label.toLowerCase()}. Ranking is using live forecast evidence only.`,
+    };
+  }
+
+  const direction = weightedError === null
+    ? "near neutral"
+    : weightedError > 0.5
+      ? `running warm by ${weightedError.toFixed(1)}°F`
+      : weightedError < -0.5
+        ? `running cool by ${Math.abs(weightedError).toFixed(1)}°F`
+        : "near neutral";
+
+  const adjustedText = adjustedForecastHighF !== null
+    ? `Bias-adjusted forecast read: ${adjustedForecastHighF.toFixed(1)}°F${adjustedBucket ? ` (${adjustedBucket})` : ""}.`
+    : "Not enough data to calculate a bias-adjusted forecast high.";
+
+  return {
+    leadTimeBucket: leadBucket,
+    leadTimeLabel: lead.label,
+    sampleCount: rows.reduce((sum, row) => sum + row.sampleCount, 0),
+    bestSource: best?.source ?? null,
+    meanErrorF: weightedError === null ? null : Number(weightedError.toFixed(2)),
+    meanAbsoluteErrorF: weightedMae === null ? null : Number(weightedMae.toFixed(2)),
+    scoreAdjustment,
+    adjustedForecastHighF: adjustedForecastHighF === null ? null : Number(adjustedForecastHighF.toFixed(1)),
+    adjustedBucket,
+    headline: best ? `${best.source} has been strongest ${lead.label.toLowerCase()}` : `Lead-time samples exist for ${lead.label.toLowerCase()}`,
+    note: `Historical forecasts at this lead time are ${direction}. ${adjustedText}`,
+  };
+}
+
 type EventOpportunityCategory =
   | "best_opportunity"
   | "watch_closely"
@@ -332,6 +504,7 @@ type EventOpportunityRead = {
   priceRead: string;
   actionLabel: string;
   riskLabel: string;
+  biasRead: ScannerBiasRead;
 };
 
 type EventOpportunityGroup = {
@@ -469,7 +642,8 @@ function riskReadForEvent(event: EventScannerResult) {
   return "No major scanner risk flagged";
 }
 
-function classifyEventOpportunity(event: EventScannerResult): EventOpportunityRead {
+function classifyEventOpportunity(event: EventScannerResult, biasSummary: ScannerBiasSummary | null = null): EventOpportunityRead {
+  const biasRead = summarizeLeadTimeBias(event, biasSummary);
   const sourceAgreement = event.forecastSynthesis?.sourceAgreement;
   const heldPositionMismatch = Boolean(
     event.matchingPosition &&
@@ -520,6 +694,7 @@ function classifyEventOpportunity(event: EventScannerResult): EventOpportunityRe
         event.score +
           priceBonus +
           (event.matchingPosition ? 6 : 0) +
+          biasRead.scoreAdjustment +
           (sourceAgreement === "strong" ? 6 : sourceAgreement === "moderate" ? 3 : 0) -
           (weakAgreement ? 10 : 0) -
           (event.signal === "INSUFFICIENT_DATA" ? 20 : 0)
@@ -537,6 +712,7 @@ function classifyEventOpportunity(event: EventScannerResult): EventOpportunityRe
     priceRead: priceReadForEvent(event),
     actionLabel,
     riskLabel: riskReadForEvent(event),
+    biasRead,
   };
 }
 
@@ -1235,6 +1411,37 @@ function OpportunityCommandPanel({
   );
 }
 
+function BiasWeightedReadPanel({ biasRead }: { biasRead: ScannerBiasRead }) {
+  const adjustmentText = biasRead.scoreAdjustment > 0
+    ? `+${biasRead.scoreAdjustment}`
+    : String(biasRead.scoreAdjustment);
+
+  return (
+    <div className="rounded-2xl border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 p-4 sm:p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#c4b5fd]">
+            Lead-time bias read
+          </p>
+          <h3 className="mt-2 text-lg font-bold text-white">{biasRead.headline}</h3>
+          <p className="mt-2 text-sm leading-6 text-[#d8b4fe]">{biasRead.note}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-[#ddd6fe] md:w-[240px]">
+          <p className="text-xs uppercase tracking-[0.18em] text-[#a78bfa]">Ranking impact</p>
+          <p className="mt-2 text-2xl font-bold text-white">{adjustmentText}</p>
+          <p className="mt-1 text-xs text-[#ddd6fe]">{biasRead.leadTimeLabel}</p>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-4">
+        <MiniStat label="Samples" value={String(biasRead.sampleCount)} />
+        <MiniStat label="Best source" value={biasRead.bestSource ?? "—"} />
+        <MiniStat label="Mean error" value={biasRead.meanErrorF === null ? "—" : `${biasRead.meanErrorF > 0 ? "+" : ""}${biasRead.meanErrorF.toFixed(1)}°F`} />
+        <MiniStat label="Adjusted bucket" value={biasRead.adjustedBucket ?? "—"} />
+      </div>
+    </div>
+  );
+}
+
 function EventCard({
   event,
   expanded,
@@ -1369,6 +1576,7 @@ function EventCard({
       {expanded ? (
         <div className="space-y-4 border-t border-[#1f2a24] p-4 sm:space-y-5 sm:p-5">
           <OpportunityCommandPanel opportunityRead={opportunityRead} />
+          <BiasWeightedReadPanel biasRead={opportunityRead.biasRead} />
 
           {event.matchingPosition ? (
             <MatchingPositionPanel matchingPosition={event.matchingPosition} />
@@ -1507,6 +1715,8 @@ export function EventScannerClient() {
   );
   const [aiReviewErrors, setAiReviewErrors] = useState<Record<string, string>>({});
   const [scope, setScope] = useState<EventScannerScope>("today_tomorrow");
+  const [scannerBiasSummary, setScannerBiasSummary] = useState<ScannerBiasSummary | null>(null);
+  const [scannerBiasStatus, setScannerBiasStatus] = useState<string | null>(null);
 
   async function loadScanner(activeScope = scope) {
     setLoading(true);
@@ -1547,6 +1757,37 @@ export function EventScannerClient() {
     }
   }
 
+
+  async function loadScannerBiasSummary() {
+    try {
+      const user = firebaseAuth.currentUser;
+
+      if (!user) {
+        setScannerBiasSummary(null);
+        return;
+      }
+
+      const idToken = await user.getIdToken();
+      const params = new URLSearchParams({ limit: "500" });
+      const response = await fetch(`/api/weather/history/bias?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      const body = await response.json();
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to load bias summary.");
+      }
+
+      setScannerBiasSummary(body.summary ?? null);
+      setScannerBiasStatus("Lead-time bias loaded");
+    } catch (err) {
+      console.error(err);
+      setScannerBiasSummary(null);
+      setScannerBiasStatus(err instanceof Error ? err.message : "Unable to load bias summary.");
+    }
+  }
 
   async function runEventAiReview(event: EventScannerResult) {
     setLoadingAiReviews((current) => ({
@@ -1614,6 +1855,10 @@ export function EventScannerClient() {
     void loadScanner(scope);
   }, [scope]);
 
+  useEffect(() => {
+    void loadScannerBiasSummary();
+  }, []);
+
   const filteredResults = useMemo(() => {
     const results = data?.results ?? [];
 
@@ -1626,8 +1871,8 @@ export function EventScannerClient() {
 
   const rankedResults = useMemo(() => {
     return [...filteredResults].sort((a, b) => {
-      const bRead = classifyEventOpportunity(b);
-      const aRead = classifyEventOpportunity(a);
+      const bRead = classifyEventOpportunity(b, scannerBiasSummary);
+      const aRead = classifyEventOpportunity(a, scannerBiasSummary);
 
       if (bRead.priorityScore !== aRead.priorityScore) {
         return bRead.priorityScore - aRead.priorityScore;
@@ -1635,7 +1880,7 @@ export function EventScannerClient() {
 
       return b.score - a.score;
     });
-  }, [filteredResults]);
+  }, [filteredResults, scannerBiasSummary]);
 
   const groupedResults = useMemo<EventOpportunityGroup[]>(() => {
     const order: EventOpportunityCategory[] = [
@@ -1652,11 +1897,11 @@ export function EventScannerClient() {
         label: opportunityCategoryLabel(id),
         description: opportunityCategoryDescription(id),
         events: rankedResults.filter(
-          (event) => classifyEventOpportunity(event).category === id
+          (event) => classifyEventOpportunity(event, scannerBiasSummary).category === id
         ),
       }))
       .filter((group) => group.events.length > 0);
-  }, [rankedResults]);
+  }, [rankedResults, scannerBiasSummary]);
 
   const counts = useMemo(() => {
     const results = data?.results ?? [];
@@ -1747,6 +1992,7 @@ export function EventScannerClient() {
         <MiniStat label="Watch closely" value={formatNumber(counts.watchClosely)} />
         <MiniStat label="No clear edge" value={formatNumber(counts.noClearEdge)} />
         <MiniStat label="Held matches" value={formatNumber(counts.heldMatches)} />
+        <MiniStat label="Bias history" value={scannerBiasStatus ?? (scannerBiasSummary ? "Loaded" : "Not loaded")} />
         <MiniStat
           label="Generated"
           value={data ? formatDateTime(data.generatedAt) : loading ? "Scanning" : "—"}
@@ -1874,7 +2120,7 @@ export function EventScannerClient() {
             </div>
 
             {group.events.map((event) => {
-              const opportunityRead = classifyEventOpportunity(event);
+              const opportunityRead = classifyEventOpportunity(event, scannerBiasSummary);
 
               return (
                 <EventCard
