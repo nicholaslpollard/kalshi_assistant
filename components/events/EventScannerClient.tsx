@@ -214,14 +214,21 @@ type LeadTimeBucket =
 
 type ScannerLeadTimeBiasRow = {
   source: string;
-  leadTimeBucket: LeadTimeBucket;
-  leadTimeLabel: string;
+  leadTimeBucket: LeadTimeBucket | string;
+  leadTimeLabel?: string | null;
+  stationId?: string | null;
+  stationName?: string | null;
+  eventFamily?: EventScannerFamily | string | null;
   sampleCount: number;
   meanErrorF: number | null;
   meanAbsoluteErrorF: number | null;
+  meanLeadTimeHours?: number | null;
   exactBucketCount: number;
+  exactBucketRate?: number | null;
   withinOneBucketCount: number;
-  notes: string;
+  withinOneBucketRate?: number | null;
+  notes?: string | null;
+  read?: string | null;
 };
 
 type ScannerBiasSummary = {
@@ -394,9 +401,29 @@ function classifyScannerLeadTime(event: EventScannerResult, now = new Date()): {
   return { bucket: "unknown", label: `${Math.round(hours)}h before peak`, hours };
 }
 
-function normalizeLeadTimeBucket(value: LeadTimeBucket): LeadTimeBucket {
-  // Older generated clients may have rendered the 18–30h label with a unicode dash.
-  return value;
+function normalizeLeadTimeBucket(value: unknown): LeadTimeBucket {
+  if (typeof value !== "string") {
+    return "unknown";
+  }
+
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/—/g, "-")
+    .replace(/–/g, "-")
+    .replace(/\s+/g, " ");
+
+  if (!normalized) return "unknown";
+  if (normalized.includes("after")) return "after_peak";
+  if (normalized.includes("0-3") || normalized.includes("0_3")) return "0_3h_before_peak";
+  if (normalized.includes("3-6") || normalized.includes("3_6")) return "3_6h_before_peak";
+  if (normalized.includes("6-12") || normalized.includes("6_12")) return "6_12h_before_peak";
+  if (normalized.includes("12-18") || normalized.includes("12_18")) return "12_18h_before_peak";
+  if (normalized.includes("18-30") || normalized.includes("18_30")) return "18_30h_before_peak";
+  if (normalized.includes("30-48") || normalized.includes("30_48")) return "30_48h_before_peak";
+  if (normalized.includes("2-5d") || normalized.includes("2_5d") || normalized.includes("2-5 d")) return "2_5d_before_peak";
+
+  return "unknown";
 }
 
 function dailyHighBucketLabelFromTemperature(tempF: number | null) {
@@ -407,11 +434,46 @@ function dailyHighBucketLabelFromTemperature(tempF: number | null) {
   const lower = Math.floor(tempF);
   return `${lower}° to ${lower + 1}°`;
 }
+function normalizedText(value: string | null | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function biasRowMatchesEvent(row: ScannerLeadTimeBiasRow, event: EventScannerResult) {
+  const family = row.eventFamily ? String(row.eventFamily) : null;
+  if (family && family !== event.family) {
+    return false;
+  }
+
+  return true;
+}
+
+function biasRowMatchesLocation(row: ScannerLeadTimeBiasRow, event: EventScannerResult) {
+  const rowStation = normalizedText(row.stationName ?? row.stationId ?? null);
+  const eventLocation = normalizedText(event.locationName);
+
+  if (!rowStation || !eventLocation) {
+    return false;
+  }
+
+  if (rowStation.includes(eventLocation) || eventLocation.includes(rowStation)) {
+    return true;
+  }
+
+  const eventTokens = eventLocation.split(" ").filter((token) => token.length >= 4);
+  return eventTokens.some((token) => rowStation.includes(token));
+}
+
 
 function summarizeLeadTimeBias(event: EventScannerResult, biasSummary: ScannerBiasSummary | null): ScannerBiasRead {
   const lead = classifyScannerLeadTime(event);
   const leadBucket = normalizeLeadTimeBucket(lead.bucket);
-  const rows = (biasSummary?.leadTimeRows ?? []).filter((row) => normalizeLeadTimeBucket(row.leadTimeBucket) === leadBucket);
+  const sameLeadRows = (biasSummary?.leadTimeRows ?? []).filter((row) => normalizeLeadTimeBucket(row.leadTimeBucket) === leadBucket);
+  const sameFamilyRows = sameLeadRows.filter((row) => biasRowMatchesEvent(row, event));
+  const sameLocationRows = sameFamilyRows.filter((row) => biasRowMatchesLocation(row, event));
+  const rows = sameLocationRows.length ? sameLocationRows : sameFamilyRows.length ? sameFamilyRows : sameLeadRows;
   const usableRows = rows.filter((row) => row.sampleCount >= 2 && row.meanAbsoluteErrorF !== null);
   const best = usableRows.slice().sort((a, b) => {
     const aMae = a.meanAbsoluteErrorF ?? 99;
@@ -456,7 +518,7 @@ function summarizeLeadTimeBias(event: EventScannerResult, biasSummary: ScannerBi
       adjustedForecastHighF: null,
       adjustedBucket: null,
       headline: "No lead-time bias history yet",
-      note: `No resolved samples are available for scans run ${lead.label.toLowerCase()}. Ranking is using live forecast evidence only.`,
+      note: `No resolved lead-time segment samples are available for scans run ${lead.label.toLowerCase()}. Ranking is using live forecast evidence only.`,
     };
   }
 
@@ -483,7 +545,7 @@ function summarizeLeadTimeBias(event: EventScannerResult, biasSummary: ScannerBi
     adjustedForecastHighF: adjustedForecastHighF === null ? null : Number(adjustedForecastHighF.toFixed(1)),
     adjustedBucket,
     headline: best ? `${best.source} has been strongest ${lead.label.toLowerCase()}` : `Lead-time samples exist for ${lead.label.toLowerCase()}`,
-    note: `Historical forecasts at this lead time are ${direction}. ${adjustedText}`,
+    note: `${best?.read ?? `Historical forecasts at this lead time are ${direction}.`} ${adjustedText}`,
   };
 }
 
@@ -1768,6 +1830,27 @@ export function EventScannerClient() {
       }
 
       const idToken = await user.getIdToken();
+      const segmentParams = new URLSearchParams({ limit: "1500" });
+      const segmentResponse = await fetch(`/api/weather/history/bias/segments?${segmentParams.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      const segmentBody = await segmentResponse.json();
+
+      if (segmentResponse.ok && Array.isArray(segmentBody.rows)) {
+        const segmentRows = segmentBody.rows.map((row: ScannerLeadTimeBiasRow) => ({
+          ...row,
+          leadTimeBucket: normalizeLeadTimeBucket(row.leadTimeBucket),
+          leadTimeLabel: row.leadTimeLabel ?? String(row.leadTimeBucket ?? "Unknown lead time"),
+          notes: row.notes ?? row.read ?? "Lead-time segment sample.",
+        }));
+
+        setScannerBiasSummary({ leadTimeRows: segmentRows });
+        setScannerBiasStatus(`${segmentRows.length} lead-time bias segments loaded`);
+        return;
+      }
+
       const params = new URLSearchParams({ limit: "500" });
       const response = await fetch(`/api/weather/history/bias?${params.toString()}`, {
         headers: {
@@ -1777,11 +1860,11 @@ export function EventScannerClient() {
       const body = await response.json();
 
       if (!response.ok) {
-        throw new Error(body?.error ?? "Unable to load bias summary.");
+        throw new Error(body?.error ?? segmentBody?.error ?? "Unable to load bias summary.");
       }
 
       setScannerBiasSummary(body.summary ?? null);
-      setScannerBiasStatus("Lead-time bias loaded");
+      setScannerBiasStatus("Broad bias summary loaded");
     } catch (err) {
       console.error(err);
       setScannerBiasSummary(null);
