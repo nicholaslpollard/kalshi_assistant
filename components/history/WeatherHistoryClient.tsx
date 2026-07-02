@@ -117,9 +117,9 @@ async function getIdToken() {
 
 function Panel({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-5 shadow-xl shadow-black/20">
+    <section className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-4 shadow-xl shadow-black/20 sm:rounded-3xl sm:p-5">
       <div className="mb-4">
-        <h2 className="text-xl font-bold text-white">{title}</h2>
+        <h2 className="text-lg font-bold text-white sm:text-xl">{title}</h2>
         {description ? <p className="mt-1 text-sm text-[#a8b3ad]">{description}</p> : null}
       </div>
       {children}
@@ -159,15 +159,15 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 function Button({ variant = "primary", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" }) {
   const className =
     variant === "primary"
-      ? "rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a] disabled:cursor-not-allowed disabled:opacity-60"
-      : "rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e] disabled:cursor-not-allowed disabled:opacity-60";
+      ? "min-h-11 w-full rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+      : "min-h-11 w-full rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto";
 
   return <button {...props} className={className} />;
 }
 
 function Badge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex rounded-full border border-[#1f2a24] bg-[#050807] px-2.5 py-1 text-xs font-semibold text-[#a8b3ad]">
+    <span className="inline-flex max-w-full break-words rounded-full border border-[#1f2a24] bg-[#050807] px-2.5 py-1 text-xs font-semibold text-[#a8b3ad]">
       {children}
     </span>
   );
@@ -680,20 +680,20 @@ export function WeatherHistoryClient() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-5 shadow-xl shadow-black/20">
+    <div className="space-y-4 sm:space-y-6">
+      <section className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-4 shadow-xl shadow-black/20 sm:rounded-3xl sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[#22c55e]">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#22c55e] sm:text-sm sm:tracking-[0.3em]">
               Weather history
             </p>
-            <h1 className="mt-2 text-3xl font-bold text-white">Model Bias & Forecast History</h1>
+            <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Model Bias & Forecast History</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-[#a8b3ad]">
               Review saved AI forecast snapshots, enter resolved station results, and measure which sources have recently run warm or cool by station and market family.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 min-[520px]:flex min-[520px]:flex-wrap">
+          <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2 min-[700px]:flex min-[700px]:flex-wrap">
             {([
               ["bias", "Model bias"],
               ["trends", "Trends"],
@@ -708,8 +708,8 @@ export function WeatherHistoryClient() {
                 onClick={() => setActiveTab(value)}
                 className={
                   activeTab === value
-                    ? "rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008]"
-                    : "rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+                    ? "min-h-11 rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008]"
+                    : "min-h-11 rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
                 }
               >
                 {label}
@@ -720,7 +720,7 @@ export function WeatherHistoryClient() {
       </section>
 
       <Panel title="Filters" description="Use station IDs like KDEN, KDCA, KNYC, KORD, KLAX, KMIA, KBOS, KPHL, KATL, KAUS.">
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-3 sm:gap-4 md:grid-cols-4">
           <Field label="Station ID">
             <TextInput
               value={stationId}
@@ -758,7 +758,7 @@ export function WeatherHistoryClient() {
           </Field>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-3">
+        <div className="mt-4 grid grid-cols-1 gap-2 min-[520px]:flex min-[520px]:flex-wrap">
           {activeTab !== "add_result" ? (
             <Button type="button" onClick={runActiveLoad} disabled={loading}>
               {loading ? "Loading..." : "Load current tab"}
@@ -786,7 +786,7 @@ export function WeatherHistoryClient() {
         >
           {biasSummary ? (
             <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <SummaryCard label="Station" value={biasSummary.stationId ?? "All"} />
                 <SummaryCard label="Snapshots" value={String(biasSummary.sampleCount)} />
                 <SummaryCard label="Resolved results" value={String(biasSummary.resolvedResultCount)} />
@@ -795,8 +795,8 @@ export function WeatherHistoryClient() {
 
               <BiasInsightPanel summary={biasSummary} />
 
-              <div className="overflow-x-auto rounded-2xl border border-[#1f2a24]">
-                <table className="min-w-[850px] w-full text-left text-sm">
+              <div className="overflow-x-auto overscroll-x-contain rounded-2xl border border-[#1f2a24]">
+                <table className="min-w-[720px] w-full text-left text-xs sm:text-sm">
                   <thead className="bg-[#0b120f] text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
                     <tr>
                       <th className="px-4 py-3">Source</th>
@@ -851,7 +851,7 @@ export function WeatherHistoryClient() {
           {snapshots.length ? (
             trendGroups.length ? (
               <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                   <SummaryCard label="Trend groups" value={String(trendGroups.length)} />
                   <SummaryCard
                     label="Warming"
@@ -905,8 +905,8 @@ export function WeatherHistoryClient() {
       {activeTab === "resolved" ? (
         <Panel title="Resolved results" description="Manual settlement results used for later model-bias calculations.">
           {resolvedResults.length ? (
-            <div className="overflow-x-auto rounded-2xl border border-[#1f2a24]">
-              <table className="min-w-[760px] w-full text-left text-sm">
+            <div className="overflow-x-auto overscroll-x-contain rounded-2xl border border-[#1f2a24]">
+              <table className="min-w-[680px] w-full text-left text-xs sm:text-sm">
                 <thead className="bg-[#0b120f] text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
                   <tr>
                     <th className="px-4 py-3">Date</th>
@@ -946,7 +946,7 @@ export function WeatherHistoryClient() {
           title="Bucket settlement tools"
           description="Use these helpers to verify how temperatures and Kalshi codes map before saving resolved results."
         >
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-3 sm:gap-4 lg:grid-cols-3">
             <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
               <Field label="Official temperature °F">
                 <TextInput
@@ -1006,7 +1006,7 @@ export function WeatherHistoryClient() {
           description="Enter the actual station result after settlement. For daily highs, the bucket is automatically inferred if you leave it blank."
         >
           <form onSubmit={saveResolvedResult} className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-3 sm:gap-4 md:grid-cols-3">
               <Field label="Station ID *">
                 <TextInput
                   required
@@ -1159,7 +1159,7 @@ function BiasInsightPanel({ summary }: { summary: WeatherBiasSummary }) {
         <p className="mt-3 text-sm leading-6 text-[#d8dfdb]">{buildStationBiasRead(summary)}</p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
         <BiasMetricCard
           title="Closest source"
           row={best}
@@ -1249,7 +1249,7 @@ function TrendGroupCard({ group }: { group: SnapshotTrendGroup }) {
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_280px]">
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="rounded-xl border border-[#1f2a24] bg-[#050807] p-4">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6f7b74]">Forecast path</p>
@@ -1257,7 +1257,7 @@ function TrendGroupCard({ group }: { group: SnapshotTrendGroup }) {
           </div>
 
           {validPoints.length ? (
-            <div className="mt-4 flex h-44 items-end gap-2 overflow-x-auto border-b border-[#1f2a24] pb-2">
+            <div className="mt-4 flex h-44 items-end gap-2 overflow-x-auto overscroll-x-contain border-b border-[#1f2a24] pb-2">
               {validPoints.map((point, index) => {
                 const high = point.forecastHighF as number;
                 const heightPercent = ((high - (minHigh ?? high - 1)) / range) * 100;
@@ -1366,8 +1366,8 @@ function SnapshotCard({
       ) : null}
 
       {snapshot.modelConsensus.length ? (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-[#1f2a24]">
-          <table className="min-w-[700px] w-full text-left text-sm">
+        <div className="mt-4 overflow-x-auto overscroll-x-contain rounded-xl border border-[#1f2a24]">
+          <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
             <thead className="bg-[#050807] text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
               <tr>
                 <th className="px-3 py-2">Source</th>
@@ -1393,7 +1393,7 @@ function SnapshotCard({
       ) : null}
 
       {snapshot.bucketProbabilities.length ? (
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-4">
           {snapshot.bucketProbabilities.map((bucket) => (
             <div key={bucket.bucket} className="rounded-xl border border-[#1f2a24] bg-[#050807] p-3">
               <p className="font-semibold text-white">{bucket.bucket}</p>

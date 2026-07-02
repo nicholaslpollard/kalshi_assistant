@@ -548,11 +548,11 @@ function MiniStat({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
+    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-3 sm:p-4">
       <p className="text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
         {label}
       </p>
-      <p className="mt-2 text-lg font-bold text-white">{value}</p>
+      <p className="mt-2 break-words text-base font-bold text-white sm:text-lg">{value}</p>
     </div>
   );
 }
@@ -579,7 +579,7 @@ function ScoreBreakdownPanel({
     : [];
 
   return (
-    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
@@ -596,7 +596,7 @@ function ScoreBreakdownPanel({
         </div>
 
         {forecastSynthesis ? (
-          <div className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-4 md:w-[320px]">
+          <div className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-3 sm:p-4 md:w-[320px]">
             <p className="text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
               Forecast synthesis
             </p>
@@ -617,7 +617,7 @@ function ScoreBreakdownPanel({
       </div>
 
       {breakdownItems.length > 0 ? (
-        <div className="mt-5 grid gap-3 md:grid-cols-5">
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {breakdownItems.map(([label, value, max]) => (
             <div
               key={String(label)}
@@ -665,7 +665,7 @@ function ScopeButton({
       onClick={() => onClick(value)}
       className={
         activeScope === value
-          ? "rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008]"
+          ? "min-h-11 w-full rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008] min-[420px]:w-auto"
           : "rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
       }
     >
@@ -685,8 +685,8 @@ function MarketTable({ markets }: { markets: EventScannerMarket[] }) {
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[#1f2a24] bg-[#0b120f]">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-sm">
+      <div className="overflow-x-auto overscroll-x-contain">
+        <table className="w-full min-w-[720px] text-left text-xs sm:text-sm">
           <thead className="text-[#a8b3ad]">
             <tr>
               <th className="border-b border-[#1f2a24] px-4 py-3">Basket</th>
@@ -750,7 +750,7 @@ function MatchingPositionPanel({
   matchingPosition: EventScannerMatchingPosition;
 }) {
   return (
-    <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5">
+    <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-4 sm:p-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
@@ -788,10 +788,10 @@ function ModelConsensusPanel({
   }
 
   return (
-    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
       <h4 className="font-semibold text-white">Model consensus</h4>
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
+      <div className="mt-4 overflow-x-auto overscroll-x-contain">
+        <table className="w-full min-w-[680px] text-left text-xs sm:text-sm">
           <thead className="text-[#a8b3ad]">
             <tr>
               <th className="border-b border-[#1f2a24] px-3 py-2">Source</th>
@@ -830,7 +830,7 @@ function BucketProbabilityPanel({
   }
 
   return (
-    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
       <h4 className="font-semibold text-white">Bucket probability distribution</h4>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {probabilities.map((item) => (
@@ -1000,7 +1000,7 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
       <DecisionSupportPanel aiReview={aiReview} />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
           <h4 className="font-semibold text-white">Observation and timing read</h4>
           <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
             {aiReview.weatherEvidenceRead.observationTrend}
@@ -1010,7 +1010,7 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
           <h4 className="font-semibold text-white">Forecast and atmosphere read</h4>
           <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
             {aiReview.weatherEvidenceRead.forecastRead}
@@ -1052,7 +1052,7 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5">
+      <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-4 sm:p-5">
         <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
           AI assessment of app candidate
         </p>
@@ -1092,7 +1092,7 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
         />
       </div>
 
-      <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+      <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
         <h4 className="font-semibold text-white">Entry reasoning</h4>
         <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
           {aiReview.entryOpinion.reasoning}
@@ -1100,28 +1100,28 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
           <h4 className="font-semibold text-white">NWS read</h4>
           <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
             {aiReview.dataRead.nwsInterpretation}
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
           <h4 className="font-semibold text-white">Open-Meteo read</h4>
           <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
             {aiReview.dataRead.openMeteoInterpretation}
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
           <h4 className="font-semibold text-white">Kalshi market read</h4>
           <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
             {aiReview.dataRead.kalshiMarketInterpretation}
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
           <h4 className="font-semibold text-white">Observation read</h4>
           <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
             {aiReview.dataRead.observationInterpretation}
@@ -1130,7 +1130,7 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
           <h4 className="font-semibold text-white">Risks</h4>
           {aiReview.risks.length > 0 ? (
             <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
@@ -1143,7 +1143,7 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
           )}
         </div>
 
-        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
           <h4 className="font-semibold text-white">What would change the view</h4>
           {aiReview.whatWouldChangeMyMind.length > 0 ? (
             <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
@@ -1158,7 +1158,7 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
           )}
         </div>
 
-        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+        <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
           <h4 className="font-semibold text-white">Recommended monitoring</h4>
           {aiReview.recommendedMonitoring.length > 0 ? (
             <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
@@ -1185,7 +1185,7 @@ function OpportunityCommandPanel({
   opportunityRead: EventOpportunityRead;
 }) {
   return (
-    <div className={`rounded-2xl border p-5 ${opportunityCategoryClass(opportunityRead.category)}`}>
+    <div className={`rounded-2xl border p-4 sm:p-5 ${opportunityCategoryClass(opportunityRead.category)}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] opacity-80">
@@ -1199,17 +1199,17 @@ function OpportunityCommandPanel({
           </p>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-4 lg:w-[280px]">
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4 lg:w-[280px]">
           <p className="text-xs uppercase tracking-[0.18em] opacity-80">
             Priority score
           </p>
-          <p className="mt-2 text-3xl font-bold text-white">
+          <p className="mt-2 text-2xl font-bold text-white sm:text-3xl">
             {opportunityRead.priorityScore}/100
           </p>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-white/10 bg-black/20 p-3">
           <p className="text-xs uppercase tracking-[0.16em] opacity-70">Forecast edge</p>
           <p className="mt-2 text-sm font-semibold text-white">{opportunityRead.forecastEdgeLabel}</p>
@@ -1255,11 +1255,11 @@ function EventCard({
   opportunityRead: EventOpportunityRead;
 }) {
   return (
-    <article className="rounded-3xl border border-[#1f2a24] bg-[#101714]">
+    <article className="overflow-hidden rounded-2xl border border-[#1f2a24] bg-[#101714] sm:rounded-3xl">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full p-5 text-left"
+        className="w-full p-4 text-left sm:p-5"
       >
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
@@ -1303,7 +1303,7 @@ function EventCard({
               ) : null}
             </div>
 
-            <h2 className="mt-4 break-words text-2xl font-bold text-white">
+            <h2 className="mt-4 break-words text-xl font-bold text-white sm:text-2xl">
               {event.locationName ?? event.marketCode ?? "Unknown location"}{" "}
               · {eventTimeLabel(event)}
             </h2>
@@ -1317,7 +1317,7 @@ function EventCard({
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:w-[640px]">
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:w-[640px]">
             <MiniStat
               label="Command group"
               value={opportunityRead.categoryLabel}
@@ -1357,7 +1357,7 @@ function EventCard({
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-between border-t border-[#1f2a24] pt-4 text-sm text-[#a8b3ad]">
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#1f2a24] pt-4 text-sm text-[#a8b3ad]">
           <span>
             {expanded ? "Hide details" : "Show details"} · {event.markets.length}{" "}
             baskets
@@ -1367,14 +1367,14 @@ function EventCard({
       </button>
 
       {expanded ? (
-        <div className="space-y-5 border-t border-[#1f2a24] p-5">
+        <div className="space-y-4 border-t border-[#1f2a24] p-4 sm:space-y-5 sm:p-5">
           <OpportunityCommandPanel opportunityRead={opportunityRead} />
 
           {event.matchingPosition ? (
             <MatchingPositionPanel matchingPosition={event.matchingPosition} />
           ) : null}
 
-          <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-5">
+          <div className="rounded-2xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-4 sm:p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-[#7dd3fc]">
@@ -1394,7 +1394,7 @@ function EventCard({
                 type="button"
                 onClick={onRunAiReview}
                 disabled={loadingAiReview}
-                className="rounded-xl bg-[#38bdf8] px-5 py-3 text-sm font-semibold text-[#021018] transition hover:bg-[#0ea5e9] disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-11 w-full rounded-xl bg-[#38bdf8] px-5 py-3 text-sm font-semibold text-[#021018] transition hover:bg-[#0ea5e9] disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
               >
                 {loadingAiReview ? "Running AI review..." : "AI Review"}
               </button>
@@ -1450,7 +1450,7 @@ function EventCard({
           />
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+            <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
               <h3 className="font-semibold text-white">Reasons</h3>
               {event.reasons.length > 0 ? (
                 <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
@@ -1465,7 +1465,7 @@ function EventCard({
               )}
             </div>
 
-            <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-5">
+            <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 sm:p-5">
               <h3 className="font-semibold text-white">Risks</h3>
               {event.risks.length > 0 ? (
                 <ul className="mt-3 space-y-2 text-sm leading-6 text-[#a8b3ad]">
@@ -1698,14 +1698,14 @@ export function EventScannerClient() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
+    <div className="space-y-4 sm:space-y-6">
+      <section className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-4 sm:rounded-3xl sm:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#22c55e]">
               Event Scanner
             </p>
-            <h1 className="mt-2 text-3xl font-bold text-white">
+            <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">
               Weather event scanner
             </h1>
             <p className="mt-3 max-w-4xl text-sm leading-6 text-[#a8b3ad]">
@@ -1725,7 +1725,7 @@ export function EventScannerClient() {
             type="button"
             onClick={() => void loadScanner(scope)}
             disabled={loading}
-            className="rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a] disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 w-full rounded-xl bg-[#22c55e] px-5 py-3 text-sm font-semibold text-[#041008] transition hover:bg-[#16a34a] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {loading ? "Scanning..." : "Refresh scanner"}
           </button>
@@ -1738,7 +1738,7 @@ export function EventScannerClient() {
         </section>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-6">
         <MiniStat label="Scanned events" value={formatNumber(counts.all)} />
         <MiniStat
           label="Potential entries"
@@ -1753,13 +1753,13 @@ export function EventScannerClient() {
         />
       </section>
 
-      <section className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-5">
+      <section className="rounded-2xl border border-[#1f2a24] bg-[#101714] p-4 sm:rounded-3xl sm:p-5">
         <div className="space-y-4">
           <div>
             <p className="mb-2 text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
               Scan scope
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 md:flex md:flex-wrap">
               <ScopeButton
                 value="today_tomorrow"
                 label="Today + tomorrow"
@@ -1792,7 +1792,7 @@ export function EventScannerClient() {
               <p className="mb-2 text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
                 Signal filter
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 md:flex md:flex-wrap">
                 {(
                   [
                     ["ALL", `All (${counts.all})`],
@@ -1811,7 +1811,7 @@ export function EventScannerClient() {
                     onClick={() => setSignalFilter(value)}
                     className={
                       signalFilter === value
-                        ? "rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008]"
+                        ? "min-h-11 w-full rounded-xl bg-[#22c55e] px-4 py-2 text-sm font-semibold text-[#041008] min-[420px]:w-auto"
                         : "rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
                     }
                   >
@@ -1821,11 +1821,11 @@ export function EventScannerClient() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 md:flex md:flex-wrap">
               <button
                 type="button"
                 onClick={expandTopCandidates}
-                className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+                className="min-h-11 w-full rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e] min-[420px]:w-auto"
               >
                 Expand top 5
               </button>
@@ -1833,7 +1833,7 @@ export function EventScannerClient() {
               <button
                 type="button"
                 onClick={collapseAll}
-                className="rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e]"
+                className="min-h-11 w-full rounded-xl border border-[#1f2a24] px-4 py-2 text-sm font-semibold text-[#a8b3ad] transition hover:border-[#22c55e] hover:text-[#22c55e] min-[420px]:w-auto"
               >
                 Collapse all
               </button>
@@ -1857,7 +1857,7 @@ export function EventScannerClient() {
       <section className="space-y-6">
         {groupedResults.map((group) => (
           <div key={group.id} className="space-y-4">
-            <div className={`rounded-3xl border p-5 ${opportunityCategoryClass(group.id)}`}>
+            <div className={`rounded-2xl border p-4 sm:rounded-3xl sm:p-5 ${opportunityCategoryClass(group.id)}`}>
               <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] opacity-80">
@@ -1895,7 +1895,7 @@ export function EventScannerClient() {
       </section>
 
       {data?.diagnostics.errors.length ? (
-        <section className="rounded-3xl border border-[#facc15]/30 bg-[#facc15]/10 p-6">
+        <section className="rounded-2xl border border-[#facc15]/30 bg-[#facc15]/10 p-4 sm:rounded-3xl sm:p-6">
           <h2 className="font-semibold text-[#fde68a]">Scanner diagnostics</h2>
           <ul className="mt-3 space-y-2 text-sm leading-6 text-[#fde68a]">
             {data.diagnostics.errors.map((item) => (
