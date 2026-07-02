@@ -1,0 +1,32 @@
+import { getServerUserFromRequest } from "@/lib/auth/getServerUser";
+import { resolvePendingTrackedWeatherEvents } from "@/lib/weather/weatherSettlementResolver";
+import { NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function readLimit(value: unknown) {
+  const parsed = typeof value === "string" || typeof value === "number" ? Number(value) : 50;
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 100) : 50;
+}
+
+export async function POST(request: Request) {
+  try {
+    const user = await getServerUserFromRequest(request);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    let body: Record<string, unknown> = {};
+    try {
+      body = (await request.json()) as Record<string, unknown>;
+    } catch {
+      body = {};
+    }
+
+    const summary = await resolvePendingTrackedWeatherEvents(user.uid, readLimit(body.limit));
+    return NextResponse.json({ ok: true, generatedAt: new Date().toISOString(), summary });
+  } catch (error) {
+    console.error("Weather admin pending resolver failed:", error);
+    const message = error instanceof Error ? error.message : "Unknown admin resolver error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

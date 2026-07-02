@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: "/positions", label: "Positions" },
   { href: "/events", label: "Event Scanner" },
   { href: "/history", label: "History" },
+  { href: "/admin", label: "Data Tools" },
   { href: "/settings/credentials", label: "Credentials" },
 ];
 
