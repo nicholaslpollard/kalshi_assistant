@@ -13,7 +13,7 @@ export default function WeatherHistoryPage() {
       <AppShell>
         <main className="px-4 py-6 sm:px-6 lg:py-8">
           <section className="mx-auto max-w-7xl rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
-            Loading...
+            Loading weather history...
           </section>
         </main>
       </AppShell>
@@ -25,9 +25,15 @@ export default function WeatherHistoryPage() {
       <AppShell>
         <main className="px-4 py-6 sm:px-6 lg:py-8">
           <section className="mx-auto max-w-7xl rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
-            <h1 className="text-2xl font-bold text-white">Sign in required</h1>
-            <p className="mt-3 text-[#a8b3ad]">
-              You need to sign in before viewing weather history and model bias.
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#22c55e]">
+              Weather history
+            </p>
+            <h1 className="mt-2 text-2xl font-bold text-white">
+              Sign in required
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[#a8b3ad]">
+              Sign in to review saved forecast snapshots, resolved weather
+              results, station bias, source accuracy, and forecast trend charts.
             </p>
             <Link
               href="/login"

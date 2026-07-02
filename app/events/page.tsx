@@ -11,9 +11,9 @@ export default function EventsPage() {
   if (loading) {
     return (
       <AppShell>
-        <main className="px-6 py-8">
+        <main className="px-4 py-6 sm:px-6 lg:py-8">
           <section className="mx-auto max-w-7xl rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
-            Loading...
+            Loading event scanner...
           </section>
         </main>
       </AppShell>
@@ -23,11 +23,17 @@ export default function EventsPage() {
   if (!user) {
     return (
       <AppShell>
-        <main className="px-6 py-8">
+        <main className="px-4 py-6 sm:px-6 lg:py-8">
           <section className="mx-auto max-w-7xl rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
-            <h1 className="text-2xl font-bold text-white">Sign in required</h1>
-            <p className="mt-3 text-[#a8b3ad]">
-              You need to sign in before using the Event Scanner.
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#22c55e]">
+              Event scanner
+            </p>
+            <h1 className="mt-2 text-2xl font-bold text-white">
+              Sign in required
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[#a8b3ad]">
+              Sign in to scan supported Kalshi weather markets, rank opportunity
+              quality, and review forecast-supported candidate buckets.
             </p>
             <Link
               href="/login"
@@ -43,7 +49,7 @@ export default function EventsPage() {
 
   return (
     <AppShell>
-      <main className="px-6 py-8">
+      <main className="px-4 py-6 sm:px-6 lg:py-8">
         <section className="mx-auto max-w-7xl">
           <EventScannerClient />
         </section>

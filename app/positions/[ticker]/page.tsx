@@ -25,11 +25,15 @@ export default function PositionDetailPage() {
 
   if (!user) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050807] px-6 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#050807] px-4 text-white sm:px-6">
         <section className="max-w-md rounded-3xl border border-[#1f2a24] bg-[#101714] p-6 text-center">
-          <h1 className="text-2xl font-bold">Sign-in required</h1>
+          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#22c55e]">
+            Position detail
+          </p>
+          <h1 className="mt-2 text-2xl font-bold">Sign in required</h1>
           <p className="mt-3 text-[#a8b3ad]">
-            You need to sign in before viewing position details.
+            Sign in to view position-level weather evidence, bucket analysis,
+            and AI decision support.
           </p>
           <Link
             href="/login"
@@ -44,7 +48,7 @@ export default function PositionDetailPage() {
 
   return (
     <AppShell>
-      <main className="px-6 py-8">
+      <main className="px-4 py-6 sm:px-6 lg:py-8">
         <section className="mx-auto max-w-7xl">
           <PositionDetailClient ticker={ticker} />
         </section>

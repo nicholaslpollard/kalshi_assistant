@@ -8,7 +8,7 @@ const dashboardActions = [
   {
     title: "Review positions",
     description:
-      "View open Kalshi positions, position exposure, market data, weather context, deterministic review, and AI-assisted analysis.",
+      "Analyze open Kalshi weather positions with live market data, settlement-aware bucket reads, official observations, model evidence, and AI-assisted action guidance.",
     href: "/positions",
     buttonLabel: "Open positions",
     primary: true,
@@ -16,15 +16,23 @@ const dashboardActions = [
   {
     title: "Scan events",
     description:
-      "Search supported Kalshi weather events for potential entries, watchlist candidates, and events where the data does not show a clear edge.",
+      "Rank supported weather markets by opportunity quality, model agreement, forecast edge, price discipline, and position relevance.",
     href: "/events",
     buttonLabel: "Open event scanner",
     primary: true,
   },
   {
+    title: "Review history",
+    description:
+      "Track forecast snapshots, resolved results, station bias, model accuracy, settlement buckets, and forecast trends over time.",
+    href: "/history",
+    buttonLabel: "Open history",
+    primary: true,
+  },
+  {
     title: "Manage credentials",
     description:
-      "Add or update the Kalshi and OpenAI credentials used for private account access and optional AI review.",
+      "Save, test, and manage encrypted Kalshi and OpenAI credentials used for private account access and optional AI reviews.",
     href: "/settings/credentials",
     buttonLabel: "Open credentials",
     primary: false,
@@ -33,22 +41,28 @@ const dashboardActions = [
 
 const capabilityItems = [
   {
-    label: "Kalshi connection",
-    value: "Private account access",
+    label: "Market data",
+    value: "Kalshi account and event context",
     detail:
-      "The app uses your saved Kalshi credentials to retrieve account summaries, positions, markets, and event data.",
+      "Retrieve account summaries, positions, supported events, market prices, and matching-position context for weather-market review.",
   },
   {
-    label: "Weather analysis",
-    value: "NWS + Open-Meteo",
+    label: "Forecast evidence",
+    value: "NWS + Open-Meteo + ensembles",
     detail:
-      "Weather context is pulled from public forecast and observation sources to support position and event review.",
+      "Use official observations, NWS forecasts and gridpoint data, Open-Meteo model guidance, ensemble spread, and peak-heating context.",
   },
   {
     label: "Decision support",
-    value: "Advisory only",
+    value: "Manual and advisory only",
     detail:
-      "The assistant can highlight possible actions, but it does not place trades or automate orders.",
+      "Generate structured reads, bucket probabilities, fair-value notes, observation triggers, and risk scenarios without placing trades.",
+  },
+  {
+    label: "Learning loop",
+    value: "History and model bias",
+    detail:
+      "Save snapshots and final results to identify which sources run warm, cool, or closest for each station and event type.",
   },
 ];
 
@@ -65,11 +79,11 @@ export default function DashboardPage() {
 
   if (!user) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050807] px-6 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#050807] px-4 text-white sm:px-6">
         <section className="max-w-md rounded-3xl border border-[#1f2a24] bg-[#101714] p-6 text-center">
-          <h1 className="text-2xl font-bold">Sign-in required</h1>
+          <h1 className="text-2xl font-bold">Sign in required</h1>
           <p className="mt-3 text-[#a8b3ad]">
-            You need to sign in before viewing your dashboard.
+            Sign in to access the weather-market dashboard.
           </p>
           <Link
             href="/login"
@@ -84,7 +98,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      <main className="px-6 py-8">
+      <main className="px-4 py-6 sm:px-6 lg:py-8">
         <section className="mx-auto max-w-7xl">
           <header className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-6 shadow-2xl shadow-black/20">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -94,33 +108,33 @@ export default function DashboardPage() {
                 </p>
 
                 <h1 className="mt-3 text-3xl font-bold md:text-5xl">
-                  Kalshi Weather Assistant
+                  Weather-market command center
                 </h1>
 
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-[#a8b3ad] md:text-base">
-                  Signed in as {user.email}. Review your weather positions,
-                  scan supported events, and use advisory-only analysis to
-                  support manual trading decisions.
+                  Signed in as {user.email}. Review exposure, scan supported
+                  weather markets, evaluate forecast evidence, and track model
+                  accuracy from one private workspace.
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 lg:w-[320px]">
+              <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4 lg:w-[340px]">
                 <p className="text-sm font-semibold text-white">
-                  Trading mode
+                  Advisory-only workflow
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[#a8b3ad]">
-                  Advisory only. This app does not place trades, submit orders,
-                  or automate execution.
+                  The assistant organizes evidence and decision support. It
+                  does not place trades, submit orders, or automate execution.
                 </p>
               </div>
             </div>
           </header>
 
-          <section className="grid gap-4 py-8 md:grid-cols-3">
+          <section className="grid gap-4 py-8 sm:grid-cols-2 xl:grid-cols-4">
             {dashboardActions.map((action) => (
               <article
                 key={action.title}
-                className="flex min-h-[230px] flex-col justify-between rounded-3xl border border-[#1f2a24] bg-[#101714] p-6"
+                className="flex min-h-[240px] flex-col justify-between rounded-3xl border border-[#1f2a24] bg-[#101714] p-6"
               >
                 <div>
                   <h2 className="text-2xl font-bold text-white">
@@ -146,7 +160,7 @@ export default function DashboardPage() {
             ))}
           </section>
 
-          <section className="grid gap-4 md:grid-cols-3">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {capabilityItems.map((item) => (
               <div
                 key={item.label}
@@ -170,39 +184,37 @@ export default function DashboardPage() {
               </p>
 
               <h2 className="mt-2 text-2xl font-bold">
-                Start with your current exposure.
+                Start with exposure, then evaluate new opportunities.
               </h2>
 
               <div className="mt-6 grid gap-3">
                 <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
                   <p className="font-semibold text-white">
-                    1. Check account status
+                    1. Review current positions
                   </p>
                   <p className="mt-1 text-sm leading-6 text-[#a8b3ad]">
-                    Use the top account bar to confirm Kalshi connection,
-                    balance, open position count, exposure, and P/L values when
-                    available.
+                    Confirm what is already held, whether the active bucket is
+                    still supported, and what observation would change the read.
                   </p>
                 </div>
 
                 <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
                   <p className="font-semibold text-white">
-                    2. Review active positions
+                    2. Scan for market mismatch
                   </p>
                   <p className="mt-1 text-sm leading-6 text-[#a8b3ad]">
-                    Open the position dashboard to inspect each market, weather
-                    context, current exit value, and action guidance.
+                    Use the scanner rankings to find forecast-supported baskets,
+                    watchlist candidates, and markets with too much disagreement.
                   </p>
                 </div>
 
                 <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
                   <p className="font-semibold text-white">
-                    3. Scan for new events
+                    3. Track outcomes
                   </p>
                   <p className="mt-1 text-sm leading-6 text-[#a8b3ad]">
-                    Use the event scanner to review supported daily and hourly
-                    weather events before deciding whether any entry is worth
-                    considering.
+                    Save resolved highs so future reviews can account for local
+                    source bias and station-specific model behavior.
                   </p>
                 </div>
               </div>
@@ -210,25 +222,26 @@ export default function DashboardPage() {
 
             <aside className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-6">
               <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#22c55e]">
-                Important reminder
+                Risk reminder
               </p>
 
               <h2 className="mt-2 text-2xl font-bold">
-                You remain in control.
+                Forecast evidence is probabilistic.
               </h2>
 
               <p className="mt-3 text-sm leading-6 text-[#a8b3ad]">
-                The assistant is designed to organize information and provide
-                analysis. It is not financial advice, it does not guarantee
-                outcomes, and it does not execute trades.
+                Weather outcomes can shift quickly because of clouds, wind,
+                storm outflow, late observations, station behavior, and market
+                liquidity. Use the assistant as a structured review tool, not a
+                guarantee.
               </p>
 
               <div className="mt-6 rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
                 <p className="font-semibold text-white">Before acting</p>
                 <p className="mt-2 text-sm leading-6 text-[#a8b3ad]">
-                  Confirm the Kalshi market rules, settlement criteria, current
-                  order book, weather source reliability, and your own risk
-                  tolerance before entering or exiting a position.
+                  Confirm Kalshi settlement rules, the current order book,
+                  official station observations, forecast updates, and personal
+                  risk limits before entering or exiting a position.
                 </p>
               </div>
             </aside>
