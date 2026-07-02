@@ -12,6 +12,7 @@ import type {
   WeatherBiasSummary,
   WeatherForecastSnapshotDocument,
   WeatherHistoryFamily,
+  WeatherModelBiasRow,
   WeatherResolvedResultDocument,
 } from "@/types/weatherHistory";
 import { useMemo, useState } from "react";
@@ -170,6 +171,114 @@ function Badge({ children }: { children: React.ReactNode }) {
       {children}
     </span>
   );
+}
+
+function getExactBucketRate(row: WeatherModelBiasRow) {
+  return row.sampleCount > 0 ? Math.round((row.exactBucketCount / row.sampleCount) * 100) : null;
+}
+
+function getWithinOneBucketRate(row: WeatherModelBiasRow) {
+  return row.sampleCount > 0 ? Math.round((row.withinOneBucketCount / row.sampleCount) * 100) : null;
+}
+
+function getBiasDirection(row: WeatherModelBiasRow) {
+  if (typeof row.meanErrorF !== "number" || !Number.isFinite(row.meanErrorF)) {
+    return "insufficient" as const;
+  }
+
+  if (row.meanErrorF > 0.5) {
+    return "warm" as const;
+  }
+
+  if (row.meanErrorF < -0.5) {
+    return "cool" as const;
+  }
+
+  return "neutral" as const;
+}
+
+function getBiasBadgeLabel(row: WeatherModelBiasRow) {
+  const direction = getBiasDirection(row);
+
+  if (direction === "warm") {
+    return `Runs warm ${formatSignedNumber(row.meanErrorF)}°F`;
+  }
+
+  if (direction === "cool") {
+    return `Runs cool ${formatSignedNumber(row.meanErrorF)}°F`;
+  }
+
+  if (direction === "neutral") {
+    return "Near neutral";
+  }
+
+  return "Needs samples";
+}
+
+function getBestAccuracyRow(rows: WeatherModelBiasRow[]) {
+  return rows
+    .filter((row) => row.sampleCount > 0 && typeof row.meanAbsoluteErrorF === "number")
+    .sort((a, b) => {
+      const maeA = a.meanAbsoluteErrorF ?? Number.POSITIVE_INFINITY;
+      const maeB = b.meanAbsoluteErrorF ?? Number.POSITIVE_INFINITY;
+      const exactA = getExactBucketRate(a) ?? -1;
+      const exactB = getExactBucketRate(b) ?? -1;
+      return maeA - maeB || exactB - exactA || b.sampleCount - a.sampleCount;
+    })[0] ?? null;
+}
+
+function getWarmestBiasRow(rows: WeatherModelBiasRow[]) {
+  return rows
+    .filter((row) => row.sampleCount > 0 && typeof row.meanErrorF === "number")
+    .sort((a, b) => (b.meanErrorF ?? -999) - (a.meanErrorF ?? -999))[0] ?? null;
+}
+
+function getCoolestBiasRow(rows: WeatherModelBiasRow[]) {
+  return rows
+    .filter((row) => row.sampleCount > 0 && typeof row.meanErrorF === "number")
+    .sort((a, b) => (a.meanErrorF ?? 999) - (b.meanErrorF ?? 999))[0] ?? null;
+}
+
+function getHighestExactBucketRow(rows: WeatherModelBiasRow[]) {
+  return rows
+    .filter((row) => row.sampleCount > 0)
+    .sort((a, b) => {
+      const exactA = getExactBucketRate(a) ?? -1;
+      const exactB = getExactBucketRate(b) ?? -1;
+      return exactB - exactA || (a.meanAbsoluteErrorF ?? 999) - (b.meanAbsoluteErrorF ?? 999);
+    })[0] ?? null;
+}
+
+function buildStationBiasRead(summary: WeatherBiasSummary) {
+  const best = getBestAccuracyRow(summary.rows);
+  const warmest = getWarmestBiasRow(summary.rows);
+  const coolest = getCoolestBiasRow(summary.rows);
+  const exact = getHighestExactBucketRow(summary.rows);
+  const usableRows = summary.rows.filter((row) => row.sampleCount > 0).length;
+
+  if (!usableRows) {
+    return "No matched forecast/resolved samples yet. Add resolved results for saved snapshots to start building station-specific bias.";
+  }
+
+  const parts: string[] = [];
+
+  if (best) {
+    parts.push(`${best.source} currently has the lowest average miss at ${formatNumber(best.meanAbsoluteErrorF)}°F MAE.`);
+  }
+
+  if (exact) {
+    parts.push(`${exact.source} has the best exact-bucket rate at ${getExactBucketRate(exact) ?? 0}%.`);
+  }
+
+  if (warmest && getBiasDirection(warmest) === "warm") {
+    parts.push(`${warmest.source} is the warmest-biased source at ${formatSignedNumber(warmest.meanErrorF)}°F.`);
+  }
+
+  if (coolest && getBiasDirection(coolest) === "cool") {
+    parts.push(`${coolest.source} is the coolest-biased source at ${formatSignedNumber(coolest.meanErrorF)}°F.`);
+  }
+
+  return parts.join(" ");
 }
 
 export function WeatherHistoryClient() {
@@ -511,6 +620,8 @@ export function WeatherHistoryClient() {
                 <SummaryCard label="Generated" value={formatDateTime(biasSummary.generatedAt)} />
               </div>
 
+              <BiasInsightPanel summary={biasSummary} />
+
               <div className="overflow-x-auto rounded-2xl border border-[#1f2a24]">
                 <table className="min-w-[850px] w-full text-left text-sm">
                   <thead className="bg-[#0b120f] text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
@@ -810,6 +921,93 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
+function BiasInsightPanel({ summary }: { summary: WeatherBiasSummary }) {
+  const best = getBestAccuracyRow(summary.rows);
+  const warmest = getWarmestBiasRow(summary.rows);
+  const coolest = getCoolestBiasRow(summary.rows);
+  const exact = getHighestExactBucketRow(summary.rows);
+  const stationLabel = summary.stationId ?? "selected stations";
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6f7b74]">
+              Station read
+            </p>
+            <h3 className="mt-1 text-lg font-bold text-white">
+              {stationLabel} model-bias interpretation
+            </h3>
+          </div>
+          <Badge>{summary.eventFamily ? summary.eventFamily.replaceAll("_", " ") : "all families"}</Badge>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-[#d8dfdb]">{buildStationBiasRead(summary)}</p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <BiasMetricCard
+          title="Closest source"
+          row={best}
+          value={best ? `${formatNumber(best.meanAbsoluteErrorF)}°F MAE` : "—"}
+          detail={best ? `${best.sampleCount} matched sample${best.sampleCount === 1 ? "" : "s"}` : "Add resolved results to calculate."}
+        />
+        <BiasMetricCard
+          title="Best bucket hit rate"
+          row={exact}
+          value={exact ? `${getExactBucketRate(exact) ?? 0}% exact` : "—"}
+          detail={exact ? `${getWithinOneBucketRate(exact) ?? 0}% within one bucket` : "No bucket matches yet."}
+        />
+        <BiasMetricCard
+          title="Warmest bias"
+          row={warmest}
+          value={warmest ? `${formatSignedNumber(warmest.meanErrorF)}°F` : "—"}
+          detail={warmest ? getBiasBadgeLabel(warmest) : "No usable samples yet."}
+        />
+        <BiasMetricCard
+          title="Coolest bias"
+          row={coolest}
+          value={coolest ? `${formatSignedNumber(coolest.meanErrorF)}°F` : "—"}
+          detail={coolest ? getBiasBadgeLabel(coolest) : "No usable samples yet."}
+        />
+      </div>
+
+      <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6f7b74]">
+          How to use this
+        </p>
+        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-[#a8b3ad]">
+          <li>Prefer sources with low MAE and high exact-bucket rate when they agree with the current setup.</li>
+          <li>If a source is consistently warm, discount its hot-bucket calls unless live observations support them.</li>
+          <li>If a source is consistently cool, be careful fading warmer buckets when observations and short-term guidance are rising.</li>
+          <li>Do not overfit one or two samples; this panel becomes more reliable after several resolved markets per station.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function BiasMetricCard({
+  title,
+  row,
+  value,
+  detail,
+}: {
+  title: string;
+  row: WeatherModelBiasRow | null;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-[#6f7b74]">{title}</p>
+      <p className="mt-2 text-lg font-bold text-white">{row?.source ?? "—"}</p>
+      <p className="mt-1 text-sm font-semibold text-[#22c55e]">{value}</p>
+      <p className="mt-2 text-xs leading-5 text-[#a8b3ad]">{detail}</p>
+    </div>
+  );
+}
+
 function SnapshotCard({
   snapshot,
   onUseForResolvedResult,
@@ -919,4 +1117,3 @@ function SnapshotCard({
     </article>
   );
 }
-
