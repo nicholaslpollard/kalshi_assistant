@@ -5,7 +5,7 @@ import type {
   AiSettlementClockRead,
 } from "@/types/eventScanner";
 
-export type WeatherHistorySourceType = "event_ai_review" | "position_ai_review";
+export type WeatherHistorySourceType = "event_ai_review" | "position_ai_review" | "event_scanner";
 
 export type WeatherHistoryFamily = "daily_high" | "hourly_temperature";
 
