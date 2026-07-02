@@ -1,10 +1,13 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
+import { saveTrackedWeatherEventFromSnapshot } from "@/lib/data/trackedWeatherEventRepository";
 import type {
   WeatherBiasSummary,
   WeatherForecastSnapshotDocument,
   WeatherForecastSnapshotInput,
   WeatherHistoryFamily,
+  WeatherLeadTimeBiasRow,
+  WeatherLeadTimeBucket,
   WeatherModelBiasRow,
   WeatherResolvedResultDocument,
   WeatherResolvedResultInput,
@@ -188,10 +191,84 @@ function inferSnapshotMetadata(input: WeatherForecastSnapshotInput) {
   };
 }
 
+
+function normalizeDateOnly(value: unknown): string | null {
+  const raw = normalizeString(value);
+  if (!raw) return null;
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
+}
+
+function classifyLeadTimeBucket(hours: number | null): WeatherLeadTimeBucket {
+  if (hours === null || !Number.isFinite(hours)) return "unknown";
+  if (hours < 0) return "post_peak";
+  if (hours <= 3) return "0_3h_to_peak";
+  if (hours <= 6) return "3_6h_to_peak";
+  if (hours <= 12) return "6_12h_to_peak";
+  if (hours <= 18) return "12_18h_to_peak";
+  if (hours <= 30) return "18_30h_to_peak";
+  if (hours <= 48) return "30_48h_to_peak";
+  if (hours <= 120) return "2_5d_to_peak";
+  return "5d_plus_to_peak";
+}
+
+function labelLeadTimeBucket(bucket: WeatherLeadTimeBucket) {
+  switch (bucket) {
+    case "post_peak": return "after normal peak window";
+    case "0_3h_to_peak": return "0–3h before peak";
+    case "3_6h_to_peak": return "3–6h before peak";
+    case "6_12h_to_peak": return "6–12h before peak";
+    case "12_18h_to_peak": return "12–18h before peak";
+    case "18_30h_to_peak": return "18–30h before peak";
+    case "30_48h_to_peak": return "30–48h before peak";
+    case "2_5d_to_peak": return "2–5d before peak";
+    case "5d_plus_to_peak": return "5d+ before peak";
+    default: return "unknown lead time";
+  }
+}
+
+function computeSnapshotLeadTime(input: WeatherForecastSnapshotInput, metadata: ReturnType<typeof inferSnapshotMetadata>) {
+  const evidence = input.weatherEvidence;
+  const event = getObject(evidence?.event);
+  const settlementClock = getObject(getObject(evidence?.decisionSupport)?.settlementClock);
+  const eventDate = normalizeDateOnly(metadata.eventDate);
+  const localNowRaw = normalizeString(event?.localNow);
+  const family = metadata.eventFamily ?? "daily_high";
+  const targetPeakHourLocal =
+    input.targetPeakHourLocal ??
+    normalizeNumber(settlementClock?.normalPeakHourLocal) ??
+    (family === "hourly_temperature" && typeof metadata.eventHourLocal === "number" ? metadata.eventHourLocal : 16);
+
+  let leadTimeHours = normalizeNumber(input.leadTimeHours);
+
+  if (leadTimeHours === null && eventDate && localNowRaw) {
+    const now = new Date(localNowRaw);
+    const target = new Date(`${eventDate}T${String(Math.trunc(targetPeakHourLocal)).padStart(2, "0")}:00:00`);
+    if (!Number.isNaN(now.getTime()) && !Number.isNaN(target.getTime())) {
+      leadTimeHours = (target.getTime() - now.getTime()) / 36e5;
+    }
+  }
+
+  if (leadTimeHours === null) {
+    leadTimeHours = normalizeNumber(event?.remainingHeatingHours);
+  }
+
+  const roundedLeadTime = leadTimeHours === null ? null : Number(leadTimeHours.toFixed(2));
+  const leadTimeBucket = input.leadTimeBucket ?? classifyLeadTimeBucket(roundedLeadTime);
+  const temporalContextLabel =
+    input.temporalContextLabel ??
+    (roundedLeadTime === null
+      ? labelLeadTimeBucket(leadTimeBucket)
+      : `${labelLeadTimeBucket(leadTimeBucket)} (${roundedLeadTime.toFixed(1)}h to ${family === "hourly_temperature" ? "event hour" : "normal peak"})`);
+
+  return { leadTimeHours: roundedLeadTime, leadTimeBucket, targetPeakHourLocal, temporalContextLabel };
+}
+
 function buildSnapshotDocument(input: WeatherForecastSnapshotInput): Omit<WeatherForecastSnapshotDocument, "id"> {
   const decisionSupport = getWeatherEvidenceDecisionSupport(input.weatherEvidence);
   const metadata = inferSnapshotMetadata(input);
   const aiReview = input.aiReview;
+  const leadTime = computeSnapshotLeadTime(input, metadata);
 
   const evidenceSummary = getNestedString(input.weatherEvidence, ["reasoning", "summary"]);
 
@@ -207,6 +284,10 @@ function buildSnapshotDocument(input: WeatherForecastSnapshotInput): Omit<Weathe
     eventDate: metadata.eventDate ?? null,
     eventFamily: metadata.eventFamily ?? null,
     eventHourLocal: metadata.eventHourLocal ?? null,
+    leadTimeHours: leadTime.leadTimeHours,
+    leadTimeBucket: leadTime.leadTimeBucket,
+    targetPeakHourLocal: leadTime.targetPeakHourLocal,
+    temporalContextLabel: leadTime.temporalContextLabel,
     modelConsensus: decisionSupport.modelConsensus,
     bucketProbabilities: decisionSupport.bucketProbabilities,
     observationTriggers: decisionSupport.observationTriggers,
@@ -228,6 +309,15 @@ export async function saveWeatherForecastSnapshot(uid: string, input: WeatherFor
     .doc(uid)
     .collection("weatherForecastSnapshots")
     .add(document);
+
+  try {
+    await saveTrackedWeatherEventFromSnapshot(uid, {
+      snapshotId: ref.id,
+      snapshot: document,
+    });
+  } catch (trackingError) {
+    console.error("Failed to create tracked weather event from snapshot:", trackingError);
+  }
 
   return ref.id;
 }
@@ -402,6 +492,31 @@ function summarizeSourceBias(params: {
   };
 }
 
+
+function summarizeLeadTimeBias(params: {
+  source: string;
+  leadTimeBucket: WeatherLeadTimeBucket;
+  errors: number[];
+  exactBucketCount: number;
+  withinOneBucketCount: number;
+}) : WeatherLeadTimeBiasRow {
+  const sampleCount = params.errors.length;
+  const meanErrorF = sampleCount ? params.errors.reduce((sum, value) => sum + value, 0) / sampleCount : null;
+  const meanAbsoluteErrorF = sampleCount ? params.errors.reduce((sum, value) => sum + Math.abs(value), 0) / sampleCount : null;
+  const roundedMeanError = meanErrorF === null ? null : Number(meanErrorF.toFixed(2));
+  const roundedMae = meanAbsoluteErrorF === null ? null : Number(meanAbsoluteErrorF.toFixed(2));
+  const leadTimeLabel = labelLeadTimeBucket(params.leadTimeBucket);
+
+  let notes = "No usable samples yet.";
+  if (sampleCount > 0 && roundedMeanError !== null) {
+    if (roundedMeanError > 0.5) notes = `${params.source} has run warm by about ${roundedMeanError.toFixed(1)}°F when scanned ${leadTimeLabel}.`;
+    else if (roundedMeanError < -0.5) notes = `${params.source} has run cool by about ${Math.abs(roundedMeanError).toFixed(1)}°F when scanned ${leadTimeLabel}.`;
+    else notes = `${params.source} has been near-neutral when scanned ${leadTimeLabel}.`;
+  }
+
+  return { source: params.source, leadTimeBucket: params.leadTimeBucket, leadTimeLabel, sampleCount, meanErrorF: roundedMeanError, meanAbsoluteErrorF: roundedMae, exactBucketCount: params.exactBucketCount, withinOneBucketCount: params.withinOneBucketCount, notes };
+}
+
 export async function getWeatherBiasSummary(params: {
   uid: string;
   stationId?: string | null;
@@ -435,6 +550,11 @@ export async function getWeatherBiasSummary(params: {
   const sourceStats = new Map<
     string,
     { errors: number[]; exactBucketCount: number; withinOneBucketCount: number }
+  >();
+
+  const leadTimeStats = new Map<
+    string,
+    { source: string; leadTimeBucket: WeatherLeadTimeBucket; errors: number[]; exactBucketCount: number; withinOneBucketCount: number }
   >();
 
   for (const snapshot of snapshots) {
@@ -486,6 +606,14 @@ export async function getWeatherBiasSummary(params: {
       }
 
       sourceStats.set(source, stats);
+
+      const leadTimeBucket = snapshot.leadTimeBucket ?? "unknown";
+      const leadTimeKey = `${source}|${leadTimeBucket}`;
+      const leadStats = leadTimeStats.get(leadTimeKey) ?? { source, leadTimeBucket, errors: [], exactBucketCount: 0, withinOneBucketCount: 0 };
+      leadStats.errors.push(forecastHighF - actualF);
+      if (forecastBucketLower !== null && actualBucketLower !== null && forecastBucketLower === actualBucketLower) leadStats.exactBucketCount += 1;
+      if (forecastBucketLower !== null && actualBucketLower !== null && Math.abs(forecastBucketLower - actualBucketLower) <= 1) leadStats.withinOneBucketCount += 1;
+      leadTimeStats.set(leadTimeKey, leadStats);
     }
   }
 
@@ -493,13 +621,18 @@ export async function getWeatherBiasSummary(params: {
     .map(([source, stats]) => summarizeSourceBias({ source, ...stats }))
     .sort((a, b) => b.sampleCount - a.sampleCount || a.source.localeCompare(b.source));
 
+  const leadTimeRows = Array.from(leadTimeStats.values())
+    .map((stats) => summarizeLeadTimeBias(stats))
+    .sort((a, b) => b.sampleCount - a.sampleCount || a.source.localeCompare(b.source) || a.leadTimeLabel.localeCompare(b.leadTimeLabel));
+
   const stationName =
     snapshots.find((snapshot) => snapshot.stationName)?.stationName ??
     resolvedResults.find((result) => result.stationName)?.stationName ??
     null;
 
   const notes = [
-    "Bias calculations compare stored forecast snapshots against manually saved resolved results.",
+    "Bias calculations compare stored forecast snapshots against resolved station results, including automatically resolved observations when available.",
+    "Lead-time rows show whether a source runs warm or cool depending on when the scan or AI review was captured relative to the normal peak-heating window.",
     "Positive mean error means the source forecast ran warmer than the resolved temperature; negative means it ran cooler.",
     "This becomes more useful after several resolved markets have been entered for the same station.",
   ];
@@ -512,6 +645,8 @@ export async function getWeatherBiasSummary(params: {
     resolvedResultCount: resolvedResults.length,
     generatedAt: new Date().toISOString(),
     rows,
+    leadTimeRows,
     notes,
   };
 }
+

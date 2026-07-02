@@ -83,6 +83,23 @@ export async function getNwsStationObservations(stationId: string) {
   );
 }
 
+export async function getNwsStationObservationsForRange(
+  stationId: string,
+  start: string,
+  end: string,
+  limit = 500
+) {
+  const params = new URLSearchParams({
+    start,
+    end,
+    limit: String(Math.min(Math.max(limit, 1), 500)),
+  });
+
+  return nwsFetch<Record<string, unknown>>(
+    `/stations/${encodeURIComponent(stationId)}/observations?${params.toString()}`
+  );
+}
+
 export async function getNwsAlerts(latitude: number, longitude: number) {
   return nwsFetch<Record<string, unknown>>(
     `/alerts/active?point=${latitude.toFixed(4)},${longitude.toFixed(4)}`

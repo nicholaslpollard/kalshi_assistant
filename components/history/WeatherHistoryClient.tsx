@@ -15,6 +15,7 @@ import type {
   WeatherModelBiasRow,
   WeatherResolvedResultDocument,
 } from "@/types/weatherHistory";
+import type { TrackedWeatherEventDocument, TrackedWeatherResolveSummary } from "@/types/trackedWeatherEvent";
 import { useMemo, useState } from "react";
 
 type SnapshotResponse = {
@@ -38,7 +39,21 @@ type BiasResponse = {
   error?: string;
 };
 
-type HistoryTab = "bias" | "trends" | "snapshots" | "resolved" | "add_result" | "settlement_tools";
+type TrackingResponse = {
+  ok: boolean;
+  generatedAt?: string;
+  events?: TrackedWeatherEventDocument[];
+  error?: string;
+};
+
+type ResolvePendingResponse = {
+  ok: boolean;
+  generatedAt?: string;
+  summary?: TrackedWeatherResolveSummary;
+  error?: string;
+};
+
+type HistoryTab = "bias" | "trends" | "snapshots" | "tracking" | "resolved" | "add_result" | "settlement_tools";
 
 const EVENT_FAMILIES: Array<{ value: "" | WeatherHistoryFamily; label: string }> = [
   { value: "", label: "All market families" },
@@ -458,6 +473,7 @@ export function WeatherHistoryClient() {
   const [limit, setLimit] = useState("100");
 
   const [snapshots, setSnapshots] = useState<WeatherForecastSnapshotDocument[]>([]);
+  const [trackedEvents, setTrackedEvents] = useState<TrackedWeatherEventDocument[]>([]);
   const [resolvedResults, setResolvedResults] = useState<WeatherResolvedResultDocument[]>([]);
   const [biasSummary, setBiasSummary] = useState<WeatherBiasSummary | null>(null);
 
@@ -571,6 +587,66 @@ export function WeatherHistoryClient() {
     }
   }
 
+  async function loadTrackedEvents() {
+    setLoading(true);
+    setError(null);
+    setStatus(null);
+
+    try {
+      const idToken = await getIdToken();
+      const response = await fetch(`/api/weather/tracking?${queryString}`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const body = (await response.json()) as TrackingResponse;
+
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error ?? "Failed to load tracked weather events.");
+      }
+
+      setTrackedEvents(body.events ?? []);
+      setStatus(`Loaded ${(body.events ?? []).length} tracked weather events.`);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resolvePendingTrackedEvents() {
+    setLoading(true);
+    setError(null);
+    setStatus(null);
+
+    try {
+      const idToken = await getIdToken();
+      const response = await fetch("/api/weather/tracking/resolve-pending", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ limit: Number(limit) || 25 }),
+      });
+      const body = (await response.json()) as ResolvePendingResponse;
+
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error ?? "Failed to resolve pending tracked events.");
+      }
+
+      const summary = body.summary;
+      setStatus(
+        summary
+          ? `Checked ${summary.checked}, resolved ${summary.resolved}, needs review ${summary.needsReview}, skipped ${summary.skipped}.`
+          : "Pending tracker check completed."
+      );
+      await Promise.all([loadTrackedEvents(), loadResolvedResults(), loadBiasSummary()]);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function loadBiasSummary() {
     setLoading(true);
     setError(null);
@@ -659,6 +735,7 @@ export function WeatherHistoryClient() {
     if (activeTab === "bias") void loadBiasSummary();
     if (activeTab === "trends") void loadSnapshots();
     if (activeTab === "snapshots") void loadSnapshots();
+    if (activeTab === "tracking") void loadTrackedEvents();
     if (activeTab === "resolved") void loadResolvedResults();
   }
 
@@ -689,7 +766,7 @@ export function WeatherHistoryClient() {
             </p>
             <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Model Bias & Forecast History</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-[#a8b3ad]">
-              Review saved AI forecast snapshots, enter resolved station results, and measure which sources have recently run warm or cool by station and market family.
+              Review saved AI forecast snapshots, automatically resolve station results, review fallback entries, and measure which sources have recently run warm or cool by station and market family.
             </p>
           </div>
 
@@ -698,6 +775,7 @@ export function WeatherHistoryClient() {
               ["bias", "Model bias"],
               ["trends", "Trends"],
               ["snapshots", "Snapshots"],
+              ["tracking", "Tracking"],
               ["resolved", "Resolved"],
               ["add_result", "Add result"],
               ["settlement_tools", "Settlement tools"],
@@ -773,6 +851,12 @@ export function WeatherHistoryClient() {
           <Button type="button" variant="secondary" onClick={() => void loadResolvedResults()} disabled={loading}>
             Refresh resolved
           </Button>
+          <Button type="button" variant="secondary" onClick={() => void loadTrackedEvents()} disabled={loading}>
+            Refresh tracking
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => void resolvePendingTrackedEvents()} disabled={loading}>
+            Resolve pending
+          </Button>
         </div>
 
         {status ? <p className="mt-4 text-sm text-[#22c55e]">{status}</p> : null}
@@ -782,7 +866,7 @@ export function WeatherHistoryClient() {
       {activeTab === "bias" ? (
         <Panel
           title="Model/source bias"
-          description="Bias compares saved model forecast rows against manually saved resolved results for the same station/date/family. Positive mean error means the source ran warm; negative means it ran cool."
+          description="Bias compares saved model forecast rows against saved resolved results for the same station/date/family. Positive mean error means the source ran warm; negative means it ran cool."
         >
           {biasSummary ? (
             <div className="space-y-4">
@@ -825,6 +909,46 @@ export function WeatherHistoryClient() {
                   </tbody>
                 </table>
               </div>
+
+
+              {biasSummary.leadTimeRows?.length ? (
+                <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
+                  <h3 className="font-semibold text-white">Lead-time bias</h3>
+                  <p className="mt-1 text-sm leading-6 text-[#a8b3ad]">
+                    This separates source performance by when the snapshot was captured relative to the normal peak-heating window. It helps answer whether a source runs warm or cool at 18 hours out, 9 hours out, 5 hours out, and similar scan windows.
+                  </p>
+                  <div className="mt-4 overflow-x-auto overscroll-x-contain rounded-2xl border border-[#1f2a24]">
+                    <table className="min-w-[760px] w-full text-left text-xs sm:text-sm">
+                      <thead className="bg-[#101714] text-xs uppercase tracking-[0.18em] text-[#6f7b74]">
+                        <tr>
+                          <th className="px-4 py-3">Source</th>
+                          <th className="px-4 py-3">Lead time</th>
+                          <th className="px-4 py-3">Samples</th>
+                          <th className="px-4 py-3">Mean error</th>
+                          <th className="px-4 py-3">MAE</th>
+                          <th className="px-4 py-3">Exact bucket</th>
+                          <th className="px-4 py-3">Within 1 bucket</th>
+                          <th className="px-4 py-3">Read</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1f2a24]">
+                        {biasSummary.leadTimeRows.map((row) => (
+                          <tr key={`${row.source}-${row.leadTimeBucket}`} className="text-[#d8dfdb]">
+                            <td className="px-4 py-3 font-semibold text-white">{row.source}</td>
+                            <td className="px-4 py-3">{row.leadTimeLabel}</td>
+                            <td className="px-4 py-3">{row.sampleCount}</td>
+                            <td className="px-4 py-3">{formatSignedNumber(row.meanErrorF)}°F</td>
+                            <td className="px-4 py-3">{formatNumber(row.meanAbsoluteErrorF)}°F</td>
+                            <td className="px-4 py-3">{row.exactBucketCount}</td>
+                            <td className="px-4 py-3">{row.withinOneBucketCount}</td>
+                            <td className="px-4 py-3 text-[#a8b3ad]">{row.notes}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
 
               {biasSummary.notes.length ? (
                 <div className="rounded-2xl border border-[#1f2a24] bg-[#0b120f] p-4">
@@ -903,7 +1027,7 @@ export function WeatherHistoryClient() {
       ) : null}
 
       {activeTab === "resolved" ? (
-        <Panel title="Resolved results" description="Manual settlement results used for later model-bias calculations.">
+        <Panel title="Resolved results" description="Resolved station results used for later model-bias calculations. These may be saved automatically from tracked NWS observations or entered manually as a fallback.">
           {resolvedResults.length ? (
             <div className="overflow-x-auto overscroll-x-contain rounded-2xl border border-[#1f2a24]">
               <table className="min-w-[680px] w-full text-left text-xs sm:text-sm">
