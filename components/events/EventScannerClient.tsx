@@ -197,6 +197,7 @@ type EventScannerResponse = {
     resultCount: number;
     filteredOutByScope: number;
     matchingPositionCount: number;
+    dateTimezone?: string;
     errors: string[];
   };
 };
@@ -2046,6 +2047,13 @@ export function EventScannerClient() {
             <p className="mt-3 text-sm text-[#6f7b74]">
               Scope: {scopeLabel(scope)}
               {data ? ` · API returned ${scopeLabel(data.scope)}` : ""}
+              {data
+                ? ` · Today ${data.today}, tomorrow ${data.tomorrow}${
+                    data.diagnostics.dateTimezone
+                      ? ` (${data.diagnostics.dateTimezone})`
+                      : ""
+                  }`
+                : ""}
             </p>
           </div>
 
@@ -2178,8 +2186,10 @@ export function EventScannerClient() {
       ) : null}
 
       {!loading && data && filteredResults.length === 0 ? (
-        <section className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-6 text-sm text-[#a8b3ad]">
-          No events matched the current filter.
+        <section className="rounded-3xl border border-[#1f2a24] bg-[#101714] p-6 text-sm leading-6 text-[#a8b3ad]">
+          No events matched the current filter. The scanner is using {data.today} as today
+          and {data.tomorrow} as tomorrow{data.diagnostics.dateTimezone ? ` based on ${data.diagnostics.dateTimezone}` : ""},
+          so next-day markets should stay under Tomorrow until the date changes.
         </section>
       ) : null}
 

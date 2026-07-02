@@ -147,6 +147,7 @@ export type EventScannerResponse = {
     resultCount: number;
     filteredOutByScope: number;
     matchingPositionCount: number;
+    dateTimezone?: string;
     errors: string[];
   };
 };

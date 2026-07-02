@@ -49,8 +49,29 @@ function toNumber(value: unknown) {
   return null;
 }
 
-function getTodayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+const SCANNER_DATE_TIMEZONE = "America/New_York";
+
+function getIsoDateInTimezone(date: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  if (!year || !month || !day) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
+function getTodayIsoDate(timezone = SCANNER_DATE_TIMEZONE) {
+  return getIsoDateInTimezone(new Date(), timezone);
 }
 
 function addDaysIsoDate(dateText: string, days: number) {
@@ -571,7 +592,7 @@ export async function GET(request: Request) {
     }
 
     const scope = getScopeFromRequest(request);
-    const today = getTodayIsoDate();
+    const today = getTodayIsoDate(SCANNER_DATE_TIMEZONE);
     const tomorrow = addDaysIsoDate(today, 1);
 
     const [seriesResults, positionsResult] = await Promise.all([
@@ -651,6 +672,7 @@ export async function GET(request: Request) {
         resultCount: results.length,
         filteredOutByScope: unfilteredResults.length - results.length,
         matchingPositionCount,
+        dateTimezone: SCANNER_DATE_TIMEZONE,
         errors,
       },
     };
