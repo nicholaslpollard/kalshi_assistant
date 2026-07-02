@@ -53,7 +53,7 @@ type ResolvePendingResponse = {
   error?: string;
 };
 
-type HistoryTab = "overview" | "bias" | "trends" | "snapshots" | "tracking" | "resolved" | "add_result" | "settlement_tools";
+type HistoryTab = "bias" | "trends" | "snapshots" | "tracking" | "resolved" | "add_result" | "settlement_tools";
 
 const EVENT_FAMILIES: Array<{ value: "" | WeatherHistoryFamily; label: string }> = [
   { value: "", label: "All market families" },
@@ -465,235 +465,12 @@ function getTrendDirectionLabel(direction: SnapshotTrendGroup["direction"]) {
   return "Needs snapshots";
 }
 
-
-type HistoryLookupResult = {
-  raw: string;
-  stationId: string;
-  stationCode: string;
-  eventFamily: "" | WeatherHistoryFamily;
-  eventDate: string;
-  label: string;
-  notes: string[];
-};
-
-type HistoryDayGroup = {
-  key: string;
-  stationId: string;
-  stationName: string | null;
-  eventDate: string;
-  eventFamily: WeatherHistoryFamily | null;
-  snapshots: WeatherForecastSnapshotDocument[];
-  trackedEvents: TrackedWeatherEventDocument[];
-  resolvedResults: WeatherResolvedResultDocument[];
-  latestActivityMs: number;
-  latestSnapshotHighF: number | null;
-  latestBucket: string | null;
-  statusLabel: string;
-};
-
-const HISTORY_STATION_ALIASES: Record<string, { stationId: string; label: string }> = {
-  ATL: { stationId: "KATL", label: "Atlanta" },
-  AUS: { stationId: "KAUS", label: "Austin" },
-  BOS: { stationId: "KBOS", label: "Boston" },
-  CHI: { stationId: "KORD", label: "Chicago" },
-  ORD: { stationId: "KORD", label: "Chicago" },
-  DCA: { stationId: "KDCA", label: "Washington / Reagan National" },
-  DEN: { stationId: "KDEN", label: "Denver" },
-  LAX: { stationId: "KLAX", label: "Los Angeles" },
-  MIA: { stationId: "KMIA", label: "Miami" },
-  NYC: { stationId: "KNYC", label: "New York City" },
-  PHL: { stationId: "KPHL", label: "Philadelphia" },
-  KATL: { stationId: "KATL", label: "Atlanta" },
-  KAUS: { stationId: "KAUS", label: "Austin" },
-  KBOS: { stationId: "KBOS", label: "Boston" },
-  KDCA: { stationId: "KDCA", label: "Washington / Reagan National" },
-  KDEN: { stationId: "KDEN", label: "Denver" },
-  KLAX: { stationId: "KLAX", label: "Los Angeles" },
-  KMIA: { stationId: "KMIA", label: "Miami" },
-  KNYC: { stationId: "KNYC", label: "New York City" },
-  KORD: { stationId: "KORD", label: "Chicago" },
-  KPHL: { stationId: "KPHL", label: "Philadelphia" },
-};
-
-function getStationCodeFromStationId(stationId: string) {
-  if (stationId === "KORD") return "CHI";
-  return stationId.replace(/^K/, "");
-}
-
-function normalizeHistoryLookup(value: string): HistoryLookupResult | null {
-  const raw = value.trim();
-  const upper = raw.toUpperCase();
-  const compact = upper.replace(/[^A-Z0-9-]/g, "");
-  const dateMatch = upper.match(/\b\d{4}-\d{2}-\d{2}\b/);
-  const eventDate = dateMatch?.[0] ?? "";
-  let token = compact.replace(/\d{4}-\d{2}-\d{2}/g, "");
-  let eventFamily: "" | WeatherHistoryFamily = "";
-  const notes: string[] = [];
-
-  const dailySeries = token.match(/KXHIGH([A-Z]{3})/);
-  if (dailySeries) {
-    token = dailySeries[1];
-    eventFamily = "daily_high";
-  }
-
-  if (token.includes("KXTEMPNYCH")) {
-    token = "NYC";
-    eventFamily = "hourly_temperature";
-  }
-
-  if (/^D[A-Z]{3}$/.test(token)) {
-    token = token.slice(1);
-    eventFamily = "daily_high";
-  } else if (/^H[A-Z]{3}$/.test(token)) {
-    token = token.slice(1);
-    eventFamily = "hourly_temperature";
-  }
-
-  const alias = HISTORY_STATION_ALIASES[token];
-  if (!alias) {
-    return null;
-  }
-
-  const stationCode = getStationCodeFromStationId(alias.stationId);
-  if (!eventFamily) {
-    notes.push("Showing all saved market families for this location. Use D" + stationCode + " for daily only or H" + stationCode + " for hourly only.");
-  }
-
-  return {
-    raw,
-    stationId: alias.stationId,
-    stationCode,
-    eventFamily,
-    eventDate,
-    label: `${alias.label} (${alias.stationId})`,
-    notes,
-  };
-}
-
-function getFamilyLabel(family: WeatherHistoryFamily | null | undefined) {
-  if (family === "daily_high") return "Daily high";
-  if (family === "hourly_temperature") return "Hourly temperature";
-  return "All families";
-}
-
-function snapshotMatchesLookup(snapshot: WeatherForecastSnapshotDocument, lookup: HistoryLookupResult) {
-  if (snapshot.stationId !== lookup.stationId) return false;
-  if (lookup.eventFamily && snapshot.eventFamily !== lookup.eventFamily) return false;
-  if (lookup.eventDate && snapshot.eventDate !== lookup.eventDate) return false;
-  return true;
-}
-
-function trackedEventMatchesLookup(event: TrackedWeatherEventDocument, lookup: HistoryLookupResult) {
-  if (event.stationId !== lookup.stationId) return false;
-  if (lookup.eventFamily && event.eventFamily !== lookup.eventFamily) return false;
-  if (lookup.eventDate && event.eventDate !== lookup.eventDate) return false;
-  return true;
-}
-
-function resolvedResultMatchesLookup(result: WeatherResolvedResultDocument, lookup: HistoryLookupResult) {
-  if (result.stationId !== lookup.stationId) return false;
-  if (lookup.eventFamily && result.eventFamily !== lookup.eventFamily) return false;
-  if (lookup.eventDate && result.eventDate !== lookup.eventDate) return false;
-  return true;
-}
-
-function buildHistoryDayGroups({
-  snapshots,
-  trackedEvents,
-  resolvedResults,
-}: {
-  snapshots: WeatherForecastSnapshotDocument[];
-  trackedEvents: TrackedWeatherEventDocument[];
-  resolvedResults: WeatherResolvedResultDocument[];
-}) {
-  const groups = new Map<string, HistoryDayGroup>();
-
-  function getGroup(stationId: string, stationName: string | null, eventDate: string, eventFamily: WeatherHistoryFamily | null) {
-    const key = `${stationId}|${eventDate}|${eventFamily ?? "all"}`;
-    const existing = groups.get(key);
-    if (existing) return existing;
-
-    const group: HistoryDayGroup = {
-      key,
-      stationId,
-      stationName,
-      eventDate,
-      eventFamily,
-      snapshots: [],
-      trackedEvents: [],
-      resolvedResults: [],
-      latestActivityMs: 0,
-      latestSnapshotHighF: null,
-      latestBucket: null,
-      statusLabel: "Saved history",
-    };
-    groups.set(key, group);
-    return group;
-  }
-
-  for (const snapshot of snapshots) {
-    if (!snapshot.stationId || !snapshot.eventDate) continue;
-    const group = getGroup(snapshot.stationId, snapshot.stationName, snapshot.eventDate, snapshot.eventFamily);
-    group.snapshots.push(snapshot);
-    group.latestActivityMs = Math.max(group.latestActivityMs, timestampToMs(snapshot.createdAt));
-  }
-
-  for (const event of trackedEvents) {
-    if (!event.stationId || !event.eventDate) continue;
-    const group = getGroup(event.stationId, event.stationName, event.eventDate, event.eventFamily);
-    group.trackedEvents.push(event);
-    group.latestActivityMs = Math.max(group.latestActivityMs, timestampToMs(event.updatedAt), timestampToMs(event.lastCheckedAt));
-  }
-
-  for (const result of resolvedResults) {
-    if (!result.stationId || !result.eventDate) continue;
-    const group = getGroup(result.stationId, result.stationName, result.eventDate, result.eventFamily);
-    group.resolvedResults.push(result);
-    group.latestActivityMs = Math.max(group.latestActivityMs, timestampToMs(result.updatedAt), timestampToMs(result.createdAt));
-  }
-
-  for (const group of groups.values()) {
-    const sortedSnapshots = [...group.snapshots].sort((a, b) => timestampToMs(b.createdAt) - timestampToMs(a.createdAt));
-    const latestSnapshot = sortedSnapshots[0] ?? null;
-    group.snapshots = sortedSnapshots;
-    group.trackedEvents = [...group.trackedEvents].sort((a, b) => timestampToMs(b.updatedAt) - timestampToMs(a.updatedAt));
-    group.resolvedResults = [...group.resolvedResults].sort((a, b) => timestampToMs(b.updatedAt) - timestampToMs(a.updatedAt));
-    group.latestSnapshotHighF = latestSnapshot ? getSnapshotForecastHigh(latestSnapshot) : null;
-    group.latestBucket = bucketFromTempF(group.latestSnapshotHighF);
-
-    const resolved = group.resolvedResults[0];
-    const tracked = group.trackedEvents[0];
-    if (resolved) {
-      group.statusLabel = `Resolved ${resolved.resolvedBucket ?? bucketFromTempF(resolved.resolvedHighF) ?? "result saved"}`;
-    } else if (tracked?.status === "resolved") {
-      group.statusLabel = `Resolved ${tracked.resolvedBucket ?? tracked.resolvedBucketCode ?? "from tracking"}`;
-    } else if (tracked?.status === "needs_review") {
-      group.statusLabel = "Needs review";
-    } else if (tracked?.status === "error") {
-      group.statusLabel = "Resolver error";
-    } else if (tracked?.status === "tracking") {
-      group.statusLabel = "Tracking";
-    } else if (group.snapshots.length) {
-      group.statusLabel = "Snapshots only";
-    }
-  }
-
-  return Array.from(groups.values()).sort((a, b) => {
-    const dateCompare = b.eventDate.localeCompare(a.eventDate);
-    if (dateCompare) return dateCompare;
-    return b.latestActivityMs - a.latestActivityMs;
-  });
-}
-
 export function WeatherHistoryClient() {
-  const [activeTab, setActiveTab] = useState<HistoryTab>("overview");
+  const [activeTab, setActiveTab] = useState<HistoryTab>("bias");
   const [stationId, setStationId] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [eventFamily, setEventFamily] = useState<"" | WeatherHistoryFamily>("daily_high");
   const [limit, setLimit] = useState("100");
-  const [lookupInput, setLookupInput] = useState("LAX");
-  const [lookupResult, setLookupResult] = useState<HistoryLookupResult | null>(null);
-  const [expandedHistoryGroup, setExpandedHistoryGroup] = useState<string | null>(null);
 
   const [snapshots, setSnapshots] = useState<WeatherForecastSnapshotDocument[]>([]);
   const [trackedEvents, setTrackedEvents] = useState<TrackedWeatherEventDocument[]>([]);
@@ -750,7 +527,6 @@ export function WeatherHistoryClient() {
   const parsedHourlyToolThreshold = parseHourlyThresholdCode(settlementTool.hourlyThresholdCode);
 
   const trendGroups = useMemo(() => buildSnapshotTrendGroups(snapshots), [snapshots]);
-  const historyDayGroups = useMemo(() => buildHistoryDayGroups({ snapshots, trackedEvents, resolvedResults }), [snapshots, trackedEvents, resolvedResults]);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -955,85 +731,7 @@ export function WeatherHistoryClient() {
     }
   }
 
-  async function loadOverviewFromLookup() {
-    setLoading(true);
-    setError(null);
-    setStatus(null);
-
-    const parsed = normalizeHistoryLookup(lookupInput);
-    if (!parsed) {
-      setLoading(false);
-      setLookupResult(null);
-      setSnapshots([]);
-      setTrackedEvents([]);
-      setResolvedResults([]);
-      setBiasSummary(null);
-      setExpandedHistoryGroup(null);
-      setError("Enter a supported code such as LAX, DEN, DNYC, DLAX, HNYC, KDEN, or KXHIGHDEN.");
-      return;
-    }
-
-    try {
-      const idToken = await getIdToken();
-      const params = new URLSearchParams();
-      params.set("stationId", parsed.stationId);
-      if (parsed.eventFamily) params.set("eventFamily", parsed.eventFamily);
-      if (parsed.eventDate) params.set("eventDate", parsed.eventDate);
-      params.set("limit", "250");
-
-      const noDateParams = new URLSearchParams(params);
-      noDateParams.delete("eventDate");
-
-      const [snapshotResponse, resolvedResponse, trackingResponse, biasResponse] = await Promise.all([
-        fetch(`/api/weather/history/snapshots?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${idToken}` },
-        }),
-        fetch(`/api/weather/history/resolved?${noDateParams.toString()}`, {
-          headers: { Authorization: `Bearer ${idToken}` },
-        }),
-        fetch(`/api/weather/tracking?${noDateParams.toString()}`, {
-          headers: { Authorization: `Bearer ${idToken}` },
-        }),
-        fetch(`/api/weather/history/bias?${noDateParams.toString()}`, {
-          headers: { Authorization: `Bearer ${idToken}` },
-        }),
-      ]);
-
-      const [snapshotBody, resolvedBody, trackingBody, biasBody] = (await Promise.all([
-        snapshotResponse.json(),
-        resolvedResponse.json(),
-        trackingResponse.json(),
-        biasResponse.json(),
-      ])) as [SnapshotResponse, ResolvedResponse, TrackingResponse, BiasResponse];
-
-      if (!snapshotResponse.ok || !snapshotBody.ok) throw new Error(snapshotBody.error ?? "Failed to load snapshots.");
-      if (!resolvedResponse.ok || !resolvedBody.ok) throw new Error(resolvedBody.error ?? "Failed to load resolved results.");
-      if (!trackingResponse.ok || !trackingBody.ok) throw new Error(trackingBody.error ?? "Failed to load tracked events.");
-      if (!biasResponse.ok || !biasBody.ok) throw new Error(biasBody.error ?? "Failed to load bias summary.");
-
-      const filteredSnapshots = (snapshotBody.snapshots ?? []).filter((snapshot) => snapshotMatchesLookup(snapshot, parsed));
-      const filteredResolved = (resolvedBody.results ?? []).filter((result) => resolvedResultMatchesLookup(result, parsed));
-      const filteredTracked = (trackingBody.events ?? []).filter((event) => trackedEventMatchesLookup(event, parsed));
-
-      setLookupResult(parsed);
-      setStationId(parsed.stationId);
-      setEventDate(parsed.eventDate);
-      setEventFamily(parsed.eventFamily);
-      setSnapshots(filteredSnapshots);
-      setResolvedResults(filteredResolved);
-      setTrackedEvents(filteredTracked);
-      setBiasSummary(biasBody.summary ?? null);
-      setExpandedHistoryGroup(null);
-      setStatus(`Loaded ${filteredSnapshots.length} snapshots, ${filteredTracked.length} tracked events, and ${filteredResolved.length} resolved results for ${parsed.label}.`);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   function runActiveLoad() {
-    if (activeTab === "overview") void loadOverviewFromLookup();
     if (activeTab === "bias") void loadBiasSummary();
     if (activeTab === "trends") void loadSnapshots();
     if (activeTab === "snapshots") void loadSnapshots();
@@ -1074,7 +772,6 @@ export function WeatherHistoryClient() {
 
           <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2 min-[700px]:flex min-[700px]:flex-wrap">
             {([
-              ["overview", "Overview"],
               ["bias", "Model bias"],
               ["trends", "Trends"],
               ["snapshots", "Snapshots"],
@@ -1099,40 +796,6 @@ export function WeatherHistoryClient() {
           </div>
         </div>
       </section>
-
-      <Panel
-        title="Quick history lookup"
-        description="Enter a simple code like LAX, DEN, NYC, DLAX, DNYC, HNYC, KDEN, or a Kalshi series such as KXHIGHDEN. Add a date like 2026-07-02 when you want one day only."
-      >
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <Field label="Location / event code">
-            <TextInput
-              value={lookupInput}
-              onChange={(event) => setLookupInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void loadOverviewFromLookup();
-                }
-              }}
-              placeholder="LAX, DLAX, DNYC, HNYC, KDEN, KXHIGHDEN"
-            />
-          </Field>
-          <Button type="button" onClick={() => void loadOverviewFromLookup()} disabled={loading}>
-            {loading ? "Loading..." : "Load overview"}
-          </Button>
-        </div>
-        {lookupResult ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Badge>{lookupResult.label}</Badge>
-            <Badge>{getFamilyLabel(lookupResult.eventFamily || null)}</Badge>
-            {lookupResult.eventDate ? <Badge>{lookupResult.eventDate}</Badge> : <Badge>All saved dates</Badge>}
-            {lookupResult.notes.map((note) => (
-              <span key={note} className="text-xs leading-5 text-[#a8b3ad]">{note}</span>
-            ))}
-          </div>
-        ) : null}
-      </Panel>
 
       <Panel title="Filters" description="Use station IDs like KDEN, KDCA, KNYC, KORD, KLAX, KMIA, KBOS, KPHL, KATL, KAUS.">
         <div className="grid gap-3 sm:gap-4 md:grid-cols-4">
@@ -1199,40 +862,6 @@ export function WeatherHistoryClient() {
         {status ? <p className="mt-4 text-sm text-[#22c55e]">{status}</p> : null}
         {error ? <p className="mt-4 text-sm text-[#fecaca]">{error}</p> : null}
       </Panel>
-
-      {activeTab === "overview" ? (
-        <Panel
-          title="History overview"
-          description="Day cards combine snapshots, tracking records, resolved results, and the current bias read for the selected location. Click a card to inspect the details for that date."
-        >
-          {historyDayGroups.length ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <SummaryCard label="Day cards" value={String(historyDayGroups.length)} />
-                <SummaryCard label="Snapshots" value={String(snapshots.length)} />
-                <SummaryCard label="Tracking records" value={String(trackedEvents.length)} />
-                <SummaryCard label="Resolved results" value={String(resolvedResults.length)} />
-              </div>
-
-              {biasSummary ? <BiasInsightPanel summary={biasSummary} /> : null}
-
-              <div className="grid gap-3">
-                {historyDayGroups.map((group) => (
-                  <HistoryDayGroupCard
-                    key={group.key}
-                    group={group}
-                    expanded={expandedHistoryGroup === group.key}
-                    onToggle={() => setExpandedHistoryGroup((current) => (current === group.key ? null : group.key))}
-                    onUseForResolvedResult={startResolvedResultFromSnapshot}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <EmptyState message="Load a location code above to see day cards. Try LAX, DEN, DNYC, DLAX, HNYC, or KDEN." />
-          )}
-        </Panel>
-      ) : null}
 
       {activeTab === "bias" ? (
         <Panel
@@ -1380,7 +1009,7 @@ export function WeatherHistoryClient() {
       ) : null}
 
       {activeTab === "snapshots" ? (
-        <Panel title="Forecast snapshots" description="These are saved when scanner runs, event AI reviews run, or position AI reviews run.">
+        <Panel title="Forecast snapshots" description="These are saved when event or position AI reviews run.">
           {snapshots.length ? (
             <div className="space-y-4">
               {snapshots.map((snapshot) => (
@@ -1610,120 +1239,6 @@ export function WeatherHistoryClient() {
         </Panel>
       ) : null}
     </div>
-  );
-}
-
-function HistoryDayGroupCard({
-  group,
-  expanded,
-  onToggle,
-  onUseForResolvedResult,
-}: {
-  group: HistoryDayGroup;
-  expanded: boolean;
-  onToggle: () => void;
-  onUseForResolvedResult: (snapshot: WeatherForecastSnapshotDocument) => void;
-}) {
-  const latestTracked = group.trackedEvents[0] ?? null;
-  const latestResolved = group.resolvedResults[0] ?? null;
-  const latestSnapshot = group.snapshots[0] ?? null;
-
-  return (
-    <article className="overflow-hidden rounded-2xl border border-[#1f2a24] bg-[#0b120f]">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="block w-full p-4 text-left transition hover:bg-[#101714]"
-      >
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="flex flex-wrap gap-2">
-              <Badge>{group.stationId}</Badge>
-              <Badge>{getFamilyLabel(group.eventFamily)}</Badge>
-              <Badge>{group.statusLabel}</Badge>
-            </div>
-            <h3 className="mt-3 text-xl font-bold text-white">{group.eventDate}</h3>
-            <p className="mt-1 text-sm text-[#a8b3ad]">
-              {group.stationName ?? group.stationId} · {group.snapshots.length} snapshot{group.snapshots.length === 1 ? "" : "s"} · {group.trackedEvents.length} tracked · {group.resolvedResults.length} resolved
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-sm min-[520px]:grid-cols-4 lg:min-w-[520px]">
-            <SummaryCard label="Latest forecast" value={`${formatNumber(group.latestSnapshotHighF)}°F`} />
-            <SummaryCard label="Latest bucket" value={group.latestBucket ?? "—"} />
-            <SummaryCard label="Actual high" value={`${formatNumber(latestResolved?.resolvedHighF ?? latestTracked?.actualHighF)}°F`} />
-            <SummaryCard label="Updated" value={group.latestActivityMs ? new Date(group.latestActivityMs).toLocaleDateString() : "—"} />
-          </div>
-        </div>
-      </button>
-
-      {expanded ? (
-        <div className="border-t border-[#1f2a24] p-4">
-          <div className="grid gap-3 lg:grid-cols-3">
-            <div className="rounded-xl border border-[#1f2a24] bg-[#050807] p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6f7b74]">Resolved result</p>
-              {latestResolved ? (
-                <div className="mt-2 text-sm leading-6 text-[#d8dfdb]">
-                  <p>High: <span className="font-semibold text-white">{formatNumber(latestResolved.resolvedHighF)}°F</span></p>
-                  <p>Temp: <span className="font-semibold text-white">{formatNumber(latestResolved.resolvedTemperatureF)}°F</span></p>
-                  <p>Bucket: <span className="font-semibold text-white">{latestResolved.resolvedBucket ?? bucketFromTempF(latestResolved.resolvedHighF) ?? "—"}</span></p>
-                  <p className="text-[#a8b3ad]">{latestResolved.notes ?? "No notes saved."}</p>
-                </div>
-              ) : (
-                <p className="mt-2 text-sm leading-6 text-[#a8b3ad]">No resolved result saved for this card yet.</p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-[#1f2a24] bg-[#050807] p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6f7b74]">Tracking</p>
-              {latestTracked ? (
-                <div className="mt-2 text-sm leading-6 text-[#d8dfdb]">
-                  <p>Status: <span className="font-semibold text-white">{latestTracked.status.replaceAll("_", " ")}</span></p>
-                  <p>Candidate: <span className="font-semibold text-white">{latestTracked.candidateBucket ?? latestTracked.candidateBucketCode ?? "—"}</span></p>
-                  <p>Observations: <span className="font-semibold text-white">{latestTracked.observationCount}</span></p>
-                  {latestTracked.errorMessage ? <p className="text-[#fca5a5]">{latestTracked.errorMessage}</p> : null}
-                </div>
-              ) : (
-                <p className="mt-2 text-sm leading-6 text-[#a8b3ad]">No tracking record is linked to this date yet.</p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-[#1f2a24] bg-[#050807] p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6f7b74]">Latest snapshot</p>
-              {latestSnapshot ? (
-                <div className="mt-2 text-sm leading-6 text-[#d8dfdb]">
-                  <p>Created: <span className="font-semibold text-white">{formatDateTime(latestSnapshot.createdAt)}</span></p>
-                  <p>Action: <span className="font-semibold text-white">{latestSnapshot.aiAction ?? "—"}</span></p>
-                  <p>Confidence: <span className="font-semibold text-white">{latestSnapshot.aiConfidence ?? "—"}</span></p>
-                  <p>Lead time: <span className="font-semibold text-white">{latestSnapshot.temporalContextLabel ?? latestSnapshot.leadTimeBucket?.replaceAll("_", " ") ?? "—"}</span></p>
-                </div>
-              ) : (
-                <p className="mt-2 text-sm leading-6 text-[#a8b3ad]">No forecast snapshot is linked to this date yet.</p>
-              )}
-            </div>
-          </div>
-
-          {group.snapshots.length ? (
-            <div className="mt-4 space-y-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm font-semibold text-white">Snapshots for this date</p>
-                <p className="text-xs text-[#a8b3ad]">Newest first</p>
-              </div>
-              {group.snapshots.slice(0, 5).map((snapshot) => (
-                <SnapshotCard
-                  key={snapshot.id ?? `${snapshot.eventTicker}-${snapshot.createdAt}`}
-                  snapshot={snapshot}
-                  onUseForResolvedResult={onUseForResolvedResult}
-                />
-              ))}
-              {group.snapshots.length > 5 ? (
-                <p className="text-xs text-[#a8b3ad]">Showing the newest 5 of {group.snapshots.length} snapshots. Open the Snapshots tab for the full filtered list.</p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </article>
   );
 }
 
