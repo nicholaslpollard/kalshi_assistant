@@ -315,230 +315,6 @@ function signalClass(signal: EventScannerSignal) {
       return "border-[#1f2a24] bg-[#0b120f] text-[#a8b3ad]";
   }
 }
-type EventOpportunityCategory =
-  | "best_opportunity"
-  | "watch_closely"
-  | "held_position_risk"
-  | "forecast_disagreement"
-  | "avoid_no_edge";
-
-type EventOpportunityRead = {
-  category: EventOpportunityCategory;
-  categoryLabel: string;
-  headline: string;
-  priorityScore: number;
-  forecastEdgeLabel: string;
-  modelAgreementLabel: string;
-  priceRead: string;
-  actionLabel: string;
-  riskLabel: string;
-};
-
-type EventOpportunityGroup = {
-  id: EventOpportunityCategory;
-  label: string;
-  description: string;
-  events: EventScannerResult[];
-};
-
-function opportunityCategoryLabel(category: EventOpportunityCategory) {
-  switch (category) {
-    case "best_opportunity":
-      return "Best Opportunities";
-    case "watch_closely":
-      return "Watch Closely";
-    case "held_position_risk":
-      return "Held Position Risk";
-    case "forecast_disagreement":
-      return "Forecast Disagreement";
-    case "avoid_no_edge":
-      return "Avoid / No Clear Edge";
-    default:
-      return "Scanner Results";
-  }
-}
-
-function opportunityCategoryDescription(category: EventOpportunityCategory) {
-  switch (category) {
-    case "best_opportunity":
-      return "Highest-priority weather/market mismatches. These deserve review first, especially when price is still below the app's forecast-supported fair-value read.";
-    case "watch_closely":
-      return "Useful candidates, but price, timing, model spread, or source agreement still need confirmation.";
-    case "held_position_risk":
-      return "Events tied to an open position where the scanner sees hedge, roll, exit, or overshoot/cap risk worth reviewing.";
-    case "forecast_disagreement":
-      return "Markets where the weather sources diverge enough that the bucket call should be treated cautiously.";
-    case "avoid_no_edge":
-      return "Low-priority cards with weak forecast support, insufficient evidence, or no clear market edge.";
-    default:
-      return "Scanner results grouped by current opportunity read.";
-  }
-}
-
-function opportunityCategoryClass(category: EventOpportunityCategory) {
-  switch (category) {
-    case "best_opportunity":
-      return "border-[#22c55e]/40 bg-[#22c55e]/10 text-[#bbf7d0]";
-    case "watch_closely":
-      return "border-[#facc15]/40 bg-[#facc15]/10 text-[#fde68a]";
-    case "held_position_risk":
-      return "border-[#38bdf8]/40 bg-[#38bdf8]/10 text-[#bae6fd]";
-    case "forecast_disagreement":
-      return "border-[#fb923c]/40 bg-[#fb923c]/10 text-[#fed7aa]";
-    case "avoid_no_edge":
-      return "border-[#64748b]/40 bg-[#64748b]/10 text-[#cbd5e1]";
-    default:
-      return "border-[#1f2a24] bg-[#0b120f] text-[#a8b3ad]";
-  }
-}
-
-function sourceAgreementLabel(value: EventForecastSynthesis["sourceAgreement"] | undefined) {
-  switch (value) {
-    case "strong":
-      return "Strong model agreement";
-    case "moderate":
-      return "Moderate model agreement";
-    case "weak":
-      return "Weak model agreement";
-    case "insufficient":
-      return "Insufficient model data";
-    default:
-      return "Model agreement unavailable";
-  }
-}
-
-function priceReadForEvent(event: EventScannerResult) {
-  const candidate = event.weatherFavorite ?? event.marketFavorite;
-
-  if (!candidate) {
-    return "No candidate price";
-  }
-
-  const ask = candidate.yesAskEstimate;
-  const bid = candidate.yesBid;
-
-  if (ask !== null && Number.isFinite(ask)) {
-    return `Candidate ask ${formatPrice(ask)}`;
-  }
-
-  if (bid !== null && Number.isFinite(bid)) {
-    return `Candidate bid ${formatPrice(bid)}`;
-  }
-
-  return "Candidate price unavailable";
-}
-
-function forecastEdgeForEvent(event: EventScannerResult) {
-  if (event.family === "hourly_temperature") {
-    return event.weather.hourlyThresholdCandidate
-      ? `Forecast threshold ${event.weather.hourlyThresholdCandidate}`
-      : "No threshold edge";
-  }
-
-  const market = event.marketFavorite?.label ?? null;
-  const weather = event.weatherFavorite?.label ?? event.forecastSynthesis?.likelyBucket ?? null;
-
-  if (!market && !weather) {
-    return "No bucket comparison";
-  }
-
-  if (market && weather && market !== weather) {
-    return `Market ${market} vs weather ${weather}`;
-  }
-
-  if (weather) {
-    return `Weather supports ${weather}`;
-  }
-
-  return `Market favors ${market}`;
-}
-
-function riskReadForEvent(event: EventScannerResult) {
-  if (event.forecastSynthesis?.sourceAgreement === "weak") {
-    return "Forecast disagreement risk";
-  }
-
-  if (event.risks.length > 0) {
-    return event.risks[0];
-  }
-
-  if (event.signal === "INSUFFICIENT_DATA") {
-    return "Insufficient evidence";
-  }
-
-  return "No major scanner risk flagged";
-}
-
-function classifyEventOpportunity(event: EventScannerResult): EventOpportunityRead {
-  const sourceAgreement = event.forecastSynthesis?.sourceAgreement;
-  const heldPositionMismatch = Boolean(
-    event.matchingPosition &&
-      event.weatherFavorite?.ticker &&
-      event.matchingPosition.ticker !== event.weatherFavorite.ticker
-  );
-  const weakAgreement = sourceAgreement === "weak";
-  const strongAgreement = sourceAgreement === "strong" || sourceAgreement === "moderate";
-  const candidateAsk = event.weatherFavorite?.yesAskEstimate ?? event.marketFavorite?.yesAskEstimate ?? null;
-  const priceBonus =
-    candidateAsk !== null && Number.isFinite(candidateAsk)
-      ? candidateAsk <= 0.35
-        ? 8
-        : candidateAsk <= 0.5
-          ? 4
-          : candidateAsk >= 0.75
-            ? -5
-            : 0
-      : -3;
-
-  let category: EventOpportunityCategory = "avoid_no_edge";
-  let headline = "No clear actionable edge.";
-  let actionLabel = "Avoid unless new data changes the setup.";
-
-  if (heldPositionMismatch) {
-    category = "held_position_risk";
-    headline = "Open position differs from the scanner's forecast-supported basket.";
-    actionLabel = "Review for hedge, trim, roll, or exit risk.";
-  } else if (weakAgreement && event.signal !== "INSUFFICIENT_DATA") {
-    category = "forecast_disagreement";
-    headline = "Weather sources are split enough to lower confidence.";
-    actionLabel = "Wait for model convergence or use smaller sizing.";
-  } else if (event.signal === "POTENTIAL_ENTRY" && event.score >= 70 && strongAgreement) {
-    category = "best_opportunity";
-    headline = "Forecast support and scanner score justify first review.";
-    actionLabel = "Review price immediately; enter only below fair-value discipline.";
-  } else if (event.signal === "POTENTIAL_ENTRY" || event.signal === "WATCH_CLOSELY") {
-    category = "watch_closely";
-    headline = "Potential setup, but not clean enough to be top priority.";
-    actionLabel = "Monitor forecast updates, price, and next observation.";
-  }
-
-  const priorityScore = Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(
-        event.score +
-          priceBonus +
-          (event.matchingPosition ? 6 : 0) +
-          (sourceAgreement === "strong" ? 6 : sourceAgreement === "moderate" ? 3 : 0) -
-          (weakAgreement ? 10 : 0) -
-          (event.signal === "INSUFFICIENT_DATA" ? 20 : 0)
-      )
-    )
-  );
-
-  return {
-    category,
-    categoryLabel: opportunityCategoryLabel(category),
-    headline,
-    priorityScore,
-    forecastEdgeLabel: forecastEdgeForEvent(event),
-    modelAgreementLabel: sourceAgreementLabel(sourceAgreement),
-    priceRead: priceReadForEvent(event),
-    actionLabel,
-    riskLabel: riskReadForEvent(event),
-  };
-}
 
 function MiniStat({
   label,
@@ -1178,63 +954,6 @@ function AiReviewResultPanel({ aiReview }: { aiReview: EventAiReview }) {
 }
 
 
-
-function OpportunityCommandPanel({
-  opportunityRead,
-}: {
-  opportunityRead: EventOpportunityRead;
-}) {
-  return (
-    <div className={`rounded-2xl border p-5 ${opportunityCategoryClass(opportunityRead.category)}`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] opacity-80">
-            Scanner command read
-          </p>
-          <h3 className="mt-2 text-lg font-bold text-white">
-            {opportunityRead.categoryLabel}
-          </h3>
-          <p className="mt-2 text-sm leading-6">
-            {opportunityRead.headline}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-4 lg:w-[280px]">
-          <p className="text-xs uppercase tracking-[0.18em] opacity-80">
-            Priority score
-          </p>
-          <p className="mt-2 text-3xl font-bold text-white">
-            {opportunityRead.priorityScore}/100
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <p className="text-xs uppercase tracking-[0.16em] opacity-70">Forecast edge</p>
-          <p className="mt-2 text-sm font-semibold text-white">{opportunityRead.forecastEdgeLabel}</p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <p className="text-xs uppercase tracking-[0.16em] opacity-70">Agreement</p>
-          <p className="mt-2 text-sm font-semibold text-white">{opportunityRead.modelAgreementLabel}</p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <p className="text-xs uppercase tracking-[0.16em] opacity-70">Price read</p>
-          <p className="mt-2 text-sm font-semibold text-white">{opportunityRead.priceRead}</p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <p className="text-xs uppercase tracking-[0.16em] opacity-70">Risk</p>
-          <p className="mt-2 text-sm font-semibold text-white">{opportunityRead.riskLabel}</p>
-        </div>
-      </div>
-
-      <p className="mt-4 text-sm font-semibold text-white">
-        Action: {opportunityRead.actionLabel}
-      </p>
-    </div>
-  );
-}
-
 function EventCard({
   event,
   expanded,
@@ -1243,7 +962,6 @@ function EventCard({
   loadingAiReview,
   aiReviewError,
   onRunAiReview,
-  opportunityRead,
 }: {
   event: EventScannerResult;
   expanded: boolean;
@@ -1252,7 +970,6 @@ function EventCard({
   loadingAiReview: boolean;
   aiReviewError: string;
   onRunAiReview: () => void;
-  opportunityRead: EventOpportunityRead;
 }) {
   return (
     <article className="rounded-3xl border border-[#1f2a24] bg-[#101714]">
@@ -1274,18 +991,6 @@ function EventCard({
 
               <span className="rounded-full border border-[#1f2a24] bg-[#0b120f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#a8b3ad]">
                 Score {event.score}/100
-              </span>
-
-              <span
-                className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${opportunityCategoryClass(
-                  opportunityRead.category
-                )}`}
-              >
-                Priority {opportunityRead.priorityScore}/100
-              </span>
-
-              <span className="rounded-full border border-[#1f2a24] bg-[#0b120f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#a8b3ad]">
-                {opportunityRead.modelAgreementLabel}
               </span>
 
               <span className="rounded-full border border-[#1f2a24] bg-[#0b120f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#a8b3ad]">
@@ -1317,11 +1022,7 @@ function EventCard({
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:w-[640px]">
-            <MiniStat
-              label="Command group"
-              value={opportunityRead.categoryLabel}
-            />
+          <div className="grid gap-3 sm:grid-cols-2 xl:w-[520px]">
             <MiniStat
               label="Market favorite"
               value={event.marketFavorite?.label ?? "—"}
@@ -1368,8 +1069,6 @@ function EventCard({
 
       {expanded ? (
         <div className="space-y-5 border-t border-[#1f2a24] p-5">
-          <OpportunityCommandPanel opportunityRead={opportunityRead} />
-
           {event.matchingPosition ? (
             <MatchingPositionPanel matchingPosition={event.matchingPosition} />
           ) : null}
@@ -1624,40 +1323,6 @@ export function EventScannerClient() {
     return results.filter((result) => result.signal === signalFilter);
   }, [data, signalFilter]);
 
-  const rankedResults = useMemo(() => {
-    return [...filteredResults].sort((a, b) => {
-      const bRead = classifyEventOpportunity(b);
-      const aRead = classifyEventOpportunity(a);
-
-      if (bRead.priorityScore !== aRead.priorityScore) {
-        return bRead.priorityScore - aRead.priorityScore;
-      }
-
-      return b.score - a.score;
-    });
-  }, [filteredResults]);
-
-  const groupedResults = useMemo<EventOpportunityGroup[]>(() => {
-    const order: EventOpportunityCategory[] = [
-      "best_opportunity",
-      "held_position_risk",
-      "watch_closely",
-      "forecast_disagreement",
-      "avoid_no_edge",
-    ];
-
-    return order
-      .map((id) => ({
-        id,
-        label: opportunityCategoryLabel(id),
-        description: opportunityCategoryDescription(id),
-        events: rankedResults.filter(
-          (event) => classifyEventOpportunity(event).category === id
-        ),
-      }))
-      .filter((group) => group.events.length > 0);
-  }, [rankedResults]);
-
   const counts = useMemo(() => {
     const results = data?.results ?? [];
 
@@ -1686,7 +1351,7 @@ export function EventScannerClient() {
   function expandTopCandidates() {
     const next: Record<string, boolean> = {};
 
-    for (const result of rankedResults.slice(0, 5)) {
+    for (const result of filteredResults.slice(0, 5)) {
       next[result.eventTicker] = true;
     }
 
@@ -1710,10 +1375,9 @@ export function EventScannerClient() {
             </h1>
             <p className="mt-3 max-w-4xl text-sm leading-6 text-[#a8b3ad]">
               Scans active Kalshi daily high-temperature and experimental hourly
-              temperature events, compares market pricing against NWS/Open-Meteo
-              forecast data, then groups cards into command-board categories so
-              the best opportunities and position risks surface first. This is
-              advisory-only and does not place trades.
+              temperature events, then compares market pricing against NWS and
+              Open-Meteo forecast data. This is advisory-only and does not place
+              trades.
             </p>
             <p className="mt-3 text-sm text-[#6f7b74]">
               Scope: {scopeLabel(scope)}
@@ -1854,43 +1518,18 @@ export function EventScannerClient() {
         </section>
       ) : null}
 
-      <section className="space-y-6">
-        {groupedResults.map((group) => (
-          <div key={group.id} className="space-y-4">
-            <div className={`rounded-3xl border p-5 ${opportunityCategoryClass(group.id)}`}>
-              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] opacity-80">
-                    {group.events.length} event{group.events.length === 1 ? "" : "s"}
-                  </p>
-                  <h2 className="mt-2 text-xl font-bold text-white">
-                    {group.label}
-                  </h2>
-                  <p className="mt-2 max-w-4xl text-sm leading-6">
-                    {group.description}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {group.events.map((event) => {
-              const opportunityRead = classifyEventOpportunity(event);
-
-              return (
-                <EventCard
-                  key={event.eventTicker}
-                  event={event}
-                  expanded={Boolean(expandedTickers[event.eventTicker])}
-                  onToggle={() => toggleExpanded(event.eventTicker)}
-                  aiReview={aiReviews[event.eventTicker] ?? null}
-                  loadingAiReview={Boolean(loadingAiReviews[event.eventTicker])}
-                  aiReviewError={aiReviewErrors[event.eventTicker] ?? ""}
-                  onRunAiReview={() => void runEventAiReview(event)}
-                  opportunityRead={opportunityRead}
-                />
-              );
-            })}
-          </div>
+      <section className="space-y-4">
+        {filteredResults.map((event) => (
+          <EventCard
+            key={event.eventTicker}
+            event={event}
+            expanded={Boolean(expandedTickers[event.eventTicker])}
+            onToggle={() => toggleExpanded(event.eventTicker)}
+            aiReview={aiReviews[event.eventTicker] ?? null}
+            loadingAiReview={Boolean(loadingAiReviews[event.eventTicker])}
+            aiReviewError={aiReviewErrors[event.eventTicker] ?? ""}
+            onRunAiReview={() => void runEventAiReview(event)}
+          />
         ))}
       </section>
 
@@ -1907,4 +1546,3 @@ export function EventScannerClient() {
     </div>
   );
 }
-
