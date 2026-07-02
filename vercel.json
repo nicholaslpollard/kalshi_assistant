@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/weather/tracking/resolve-pending-cron",
+      "schedule": "17 * * * *"
+    }
+  ]
+}
