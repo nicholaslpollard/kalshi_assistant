@@ -3,6 +3,7 @@ import {
   listWeatherResolvedResults,
   saveWeatherResolvedResult,
 } from "@/lib/data/weatherHistoryRepository";
+import { inferResolvedBucket } from "@/lib/weather/bucketUtils";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -13,11 +14,25 @@ function toNumber(value: unknown) {
   }
 
   if (typeof value === "string") {
-    const parsed = Number(value);
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = Number(trimmed);
     return Number.isFinite(parsed) ? parsed : null;
   }
 
   return null;
+}
+
+function toStringOrNull(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 function getLimit(value: string | null) {
@@ -72,8 +87,8 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as Record<string, unknown>;
-    const stationId = typeof body.stationId === "string" ? body.stationId.trim() : "";
-    const eventDate = typeof body.eventDate === "string" ? body.eventDate.trim() : "";
+    const stationId = toStringOrNull(body.stationId)?.toUpperCase() ?? "";
+    const eventDate = toStringOrNull(body.eventDate) ?? "";
 
     if (!stationId || !eventDate) {
       return NextResponse.json(
@@ -88,21 +103,54 @@ export async function POST(request: Request) {
         ? eventFamilyParam
         : "daily_high";
 
+    const resolvedHighF = toNumber(body.resolvedHighF);
+    const resolvedTemperatureF = toNumber(body.resolvedTemperatureF);
+    const resolvedBucket = inferResolvedBucket({
+      eventFamily,
+      resolvedBucket: body.resolvedBucket,
+      resolvedHighF,
+      resolvedTemperatureF,
+      marketTicker: body.marketTicker,
+    });
+
+    if (eventFamily === "daily_high" && resolvedHighF === null && !resolvedBucket) {
+      return NextResponse.json(
+        { error: "For daily-high results, enter either resolvedHighF or resolvedBucket." },
+        { status: 400 }
+      );
+    }
+
+    if (
+      eventFamily === "hourly_temperature" &&
+      resolvedTemperatureF === null &&
+      resolvedHighF === null &&
+      !resolvedBucket
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "For hourly-temperature results, enter resolvedTemperatureF, resolvedHighF, or resolvedBucket.",
+        },
+        { status: 400 }
+      );
+    }
+
     const id = await saveWeatherResolvedResult(user.uid, {
       stationId,
-      stationName: typeof body.stationName === "string" ? body.stationName : null,
+      stationName: toStringOrNull(body.stationName),
       eventDate,
       eventFamily,
       eventHourLocal: toNumber(body.eventHourLocal),
-      resolvedHighF: toNumber(body.resolvedHighF),
-      resolvedTemperatureF: toNumber(body.resolvedTemperatureF),
-      resolvedBucket: typeof body.resolvedBucket === "string" ? body.resolvedBucket : null,
-      notes: typeof body.notes === "string" ? body.notes : null,
+      resolvedHighF,
+      resolvedTemperatureF,
+      resolvedBucket,
+      notes: toStringOrNull(body.notes),
     });
 
     return NextResponse.json({
       ok: true,
       id,
+      resolvedBucket,
     });
   } catch (error) {
     console.error("Weather resolved-result save failed:", error);
@@ -113,3 +161,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+

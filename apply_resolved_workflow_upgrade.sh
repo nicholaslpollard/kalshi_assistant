@@ -1,3 +1,374 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p lib/weather
+cat > lib/weather/bucketUtils.ts <<'TS_EOF'
+export type ParsedDailyHighBucket = {
+  kind: "daily_high_range";
+  raw: string;
+  lowerF: number;
+  upperF: number;
+  label: string;
+  kalshiCode: string;
+};
+
+export type ParsedHourlyThreshold = {
+  kind: "hourly_threshold";
+  raw: string;
+  thresholdF: number;
+  label: string;
+  kalshiCode: string;
+};
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function stripTrailingZero(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+export function dailyHighBucketFromTemperatureF(value: unknown): string | null {
+  const numeric = typeof value === "string" ? Number(value) : value;
+
+  if (!isFiniteNumber(numeric)) {
+    return null;
+  }
+
+  const lower = Math.floor(numeric);
+  return `${lower}° to ${lower + 1}°`;
+}
+
+export function dailyHighBucketCodeFromTemperatureF(value: unknown): string | null {
+  const numeric = typeof value === "string" ? Number(value) : value;
+
+  if (!isFiniteNumber(numeric)) {
+    return null;
+  }
+
+  const lower = Math.floor(numeric);
+  return `B${stripTrailingZero(lower + 0.5)}`;
+}
+
+export function parseDailyHighBucketCode(value: unknown): ParsedDailyHighBucket | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const directMatch = trimmed.match(/^B(-?\d+(?:\.\d+)?)$/i);
+  const tickerMatch = trimmed.match(/(?:^|[-_])B(-?\d+(?:\.\d+)?)(?:$|[-_])/i);
+  const match = directMatch ?? tickerMatch;
+
+  if (!match) {
+    return null;
+  }
+
+  const midpoint = Number(match[1]);
+  if (!Number.isFinite(midpoint)) {
+    return null;
+  }
+
+  const lower = Math.floor(midpoint);
+  const upper = lower + 1;
+  const code = `B${stripTrailingZero(midpoint)}`;
+
+  return {
+    kind: "daily_high_range",
+    raw: trimmed,
+    lowerF: lower,
+    upperF: upper,
+    label: `${lower}° to ${upper}°`,
+    kalshiCode: code,
+  };
+}
+
+export function parseHourlyThresholdCode(value: unknown): ParsedHourlyThreshold | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const directMatch = trimmed.match(/^T(-?\d+(?:\.\d+)?)$/i);
+  const tickerMatch = trimmed.match(/(?:^|[-_])T(-?\d+(?:\.\d+)?)(?:$|[-_])/i);
+  const match = directMatch ?? tickerMatch;
+
+  if (!match) {
+    return null;
+  }
+
+  const rawThreshold = Number(match[1]);
+  if (!Number.isFinite(rawThreshold)) {
+    return null;
+  }
+
+  // Kalshi hourly temperature contracts often encode 69.99 to mean 70° or above.
+  const threshold = Number.isInteger(rawThreshold) ? rawThreshold : Math.ceil(rawThreshold);
+  const code = `T${stripTrailingZero(rawThreshold)}`;
+
+  return {
+    kind: "hourly_threshold",
+    raw: trimmed,
+    thresholdF: threshold,
+    label: `${threshold}° or above`,
+    kalshiCode: code,
+  };
+}
+
+export function normalizeDailyHighBucketLabel(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return dailyHighBucketFromTemperatureF(value);
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsedCode = parseDailyHighBucketCode(trimmed);
+  if (parsedCode) {
+    return parsedCode.label;
+  }
+
+  const rangeMatch = trimmed.match(/(-?\d+(?:\.\d+)?)\s*(?:°|deg|degrees)?\s*(?:to|-|–|—)\s*(-?\d+(?:\.\d+)?)/i);
+  if (rangeMatch) {
+    const lower = Math.floor(Number(rangeMatch[1]));
+    const upper = Math.ceil(Number(rangeMatch[2]));
+    if (Number.isFinite(lower) && Number.isFinite(upper)) {
+      return `${lower}° to ${upper}°`;
+    }
+  }
+
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) {
+    return dailyHighBucketFromTemperatureF(numeric);
+  }
+
+  return trimmed;
+}
+
+export function inferResolvedBucket(input: {
+  eventFamily?: string | null;
+  resolvedBucket?: unknown;
+  resolvedHighF?: unknown;
+  resolvedTemperatureF?: unknown;
+  marketTicker?: unknown;
+}) {
+  const explicitBucket =
+    typeof input.resolvedBucket === "string" && input.resolvedBucket.trim()
+      ? input.resolvedBucket.trim()
+      : null;
+
+  if (explicitBucket) {
+    if (input.eventFamily === "hourly_temperature") {
+      return parseHourlyThresholdCode(explicitBucket)?.label ?? explicitBucket;
+    }
+
+    return normalizeDailyHighBucketLabel(explicitBucket);
+  }
+
+  if (input.eventFamily === "hourly_temperature") {
+    const fromTicker = parseHourlyThresholdCode(input.marketTicker);
+    if (fromTicker) {
+      return fromTicker.label;
+    }
+
+    const temp =
+      typeof input.resolvedTemperatureF === "string"
+        ? Number(input.resolvedTemperatureF)
+        : input.resolvedTemperatureF;
+
+    return isFiniteNumber(temp) ? `${Math.round(temp)}° observed` : null;
+  }
+
+  const fromTicker = parseDailyHighBucketCode(input.marketTicker);
+  if (fromTicker) {
+    return fromTicker.label;
+  }
+
+  return dailyHighBucketFromTemperatureF(input.resolvedHighF);
+}
+
+TS_EOF
+
+mkdir -p app/api/weather/history/resolved
+cat > app/api/weather/history/resolved/route.ts <<'TS_EOF'
+import { getServerUserFromRequest } from "@/lib/auth/getServerUser";
+import {
+  listWeatherResolvedResults,
+  saveWeatherResolvedResult,
+} from "@/lib/data/weatherHistoryRepository";
+import { inferResolvedBucket } from "@/lib/weather/bucketUtils";
+import { NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+
+function toNumber(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function toStringOrNull(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function getLimit(value: string | null) {
+  const parsed = value ? Number(value) : 50;
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 250) : 50;
+}
+
+export async function GET(request: Request) {
+  try {
+    const user = await getServerUserFromRequest(request);
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const url = new URL(request.url);
+    const stationId = url.searchParams.get("stationId");
+    const eventFamilyParam = url.searchParams.get("eventFamily");
+    const eventFamily =
+      eventFamilyParam === "daily_high" || eventFamilyParam === "hourly_temperature"
+        ? eventFamilyParam
+        : null;
+
+    const results = await listWeatherResolvedResults({
+      uid: user.uid,
+      stationId,
+      eventFamily,
+      limit: getLimit(url.searchParams.get("limit")),
+    });
+
+    return NextResponse.json({
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      results,
+    });
+  } catch (error) {
+    console.error("Weather resolved-result list request failed:", error);
+
+    const message =
+      error instanceof Error ? error.message : "Unknown resolved-result history error";
+
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const user = await getServerUserFromRequest(request);
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = (await request.json()) as Record<string, unknown>;
+    const stationId = toStringOrNull(body.stationId)?.toUpperCase() ?? "";
+    const eventDate = toStringOrNull(body.eventDate) ?? "";
+
+    if (!stationId || !eventDate) {
+      return NextResponse.json(
+        { error: "stationId and eventDate are required." },
+        { status: 400 }
+      );
+    }
+
+    const eventFamilyParam = body.eventFamily;
+    const eventFamily =
+      eventFamilyParam === "daily_high" || eventFamilyParam === "hourly_temperature"
+        ? eventFamilyParam
+        : "daily_high";
+
+    const resolvedHighF = toNumber(body.resolvedHighF);
+    const resolvedTemperatureF = toNumber(body.resolvedTemperatureF);
+    const resolvedBucket = inferResolvedBucket({
+      eventFamily,
+      resolvedBucket: body.resolvedBucket,
+      resolvedHighF,
+      resolvedTemperatureF,
+      marketTicker: body.marketTicker,
+    });
+
+    if (eventFamily === "daily_high" && resolvedHighF === null && !resolvedBucket) {
+      return NextResponse.json(
+        { error: "For daily-high results, enter either resolvedHighF or resolvedBucket." },
+        { status: 400 }
+      );
+    }
+
+    if (
+      eventFamily === "hourly_temperature" &&
+      resolvedTemperatureF === null &&
+      resolvedHighF === null &&
+      !resolvedBucket
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "For hourly-temperature results, enter resolvedTemperatureF, resolvedHighF, or resolvedBucket.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const id = await saveWeatherResolvedResult(user.uid, {
+      stationId,
+      stationName: toStringOrNull(body.stationName),
+      eventDate,
+      eventFamily,
+      eventHourLocal: toNumber(body.eventHourLocal),
+      resolvedHighF,
+      resolvedTemperatureF,
+      resolvedBucket,
+      notes: toStringOrNull(body.notes),
+    });
+
+    return NextResponse.json({
+      ok: true,
+      id,
+      resolvedBucket,
+    });
+  } catch (error) {
+    console.error("Weather resolved-result save failed:", error);
+
+    const message =
+      error instanceof Error ? error.message : "Unknown resolved-result save error";
+
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+TS_EOF
+
+mkdir -p components/history
+cat > components/history/WeatherHistoryClient.tsx <<'TSX_EOF'
 "use client";
 
 import { firebaseAuth } from "@/lib/firebase/client";
@@ -920,3 +1291,6 @@ function SnapshotCard({
   );
 }
 
+TSX_EOF
+
+echo "Resolved-result workflow and bucket settlement tools applied."
