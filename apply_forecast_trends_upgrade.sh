@@ -1,3 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(pwd)"
+
+if [ ! -f "$ROOT/package.json" ]; then
+  echo "ERROR: Run this script from the repo root where package.json exists." >&2
+  exit 1
+fi
+
+mkdir -p "$ROOT/components/history"
+
+cat > "$ROOT/components/history/WeatherHistoryClient.tsx" <<'EOF'
 "use client";
 
 import { firebaseAuth } from "@/lib/firebase/client";
@@ -1419,3 +1432,8 @@ function SnapshotCard({
     </article>
   );
 }
+EOF
+
+echo "Forecast snapshot trends upgrade applied."
+echo "Replaced: components/history/WeatherHistoryClient.tsx"
+echo "Next: npm run build"
